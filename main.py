@@ -1,13 +1,10 @@
 import os
 import sys
-
 import glob
 import requests
 import time
-import json
 import tarfile
 import shutil
-import threading
 from functools import partial
 from loguru import logger
 
@@ -47,21 +44,6 @@ def switch_prompt(pfg, mode, more_requirement):
         assert False, "未知指令"
     return inputs_array, sys_prompt_array
 
-def descend_to_extracted_folder_if_exist(project_folder):
-    """
-    如果存在解压后的文件夹，则进入该文件夹。
-
-    Args:
-        project_folder: 项目文件夹路径
-
-    Returns:
-        实际的项目文件夹路径
-    """
-    maybe_dir = [f for f in glob.glob(f'{project_folder}/*') if os.path.isdir(f)]
-    if len(maybe_dir) == 0: return project_folder
-    if maybe_dir[0].endswith('.extract'): return maybe_dir[0]
-    return project_folder
-
 def move_project(project_folder, arxiv_id=None):
     """
     将项目移动到新的工作文件夹。
@@ -90,6 +72,21 @@ def move_project(project_folder, arxiv_id=None):
 
     shutil.copytree(src=project_folder, dst=new_workfolder)
     return new_workfolder
+
+def descend_to_extracted_folder_if_exist(project_folder):
+    """
+    如果存在已解压的文件夹，则进入该文件夹，否则返回原始文件夹。
+
+    参数:
+    - project_folder: 指定文件夹路径的字符串。
+
+    返回:
+    - 指向已解压文件夹的路径字符串，如果没有解压文件夹则返回原始文件夹路径。
+    """
+    maybe_dir = [f for f in glob.glob(f'{project_folder}/*') if os.path.isdir(f)]
+    if len(maybe_dir) == 0: return project_folder
+    if maybe_dir[0].endswith('.extract'): return maybe_dir[0]
+    return project_folder
 
 def arxiv_download(txt, allow_cache=True):
     """

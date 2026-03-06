@@ -14,7 +14,7 @@ from .latex_pickle_io import objdump, objload
 pj = os.path.join
 
 
-def split_subprocess(txt, project_folder, return_dict, opts):
+def split_subprocess(txt, project_folder, return_dict):
     """
     将LaTeX文件分解为链表，每个节点使用保留标志来指示是否应由GPT处理。
 
@@ -22,7 +22,6 @@ def split_subprocess(txt, project_folder, return_dict, opts):
         txt: LaTeX文件内容字符串
         project_folder: 项目文件夹路径
         return_dict: 用于返回结果的多进程字典
-        opts: 处理选项列表
 
     Returns:
         包含处理结果的字典，包含nodes和segment_parts_for_gpt
@@ -559,14 +558,13 @@ class LatexPaperSplit():
         return result_string
 
 
-    def split(self, txt, project_folder, opts):
+    def split(self, txt, project_folder):
         """
         将LaTeX文件分解为链表，使用多进程避免超时错误。
 
         Args:
             txt: LaTeX文件内容字符串
             project_folder: 项目文件夹路径
-            opts: 处理选项列表
 
         Returns:
             需要GPT处理的文本片段列表
@@ -576,7 +574,7 @@ class LatexPaperSplit():
         return_dict = manager.dict()
         p = multiprocessing.Process(
             target=split_subprocess,
-            args=(txt, project_folder, return_dict, opts))
+            args=(txt, project_folder, return_dict))
         p.start()
         p.join()
         p.close()
@@ -647,7 +645,7 @@ class LatexPaperFileGroup():
         return manifest
 
 
-def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kwargs, plugin_kwargs, mode='proofread', switch_prompt=None, opts=[]):
+def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kwargs, plugin_kwargs, mode='proofread', switch_prompt=None):
     """
     对LaTeX文件进行精细分解和转换处理。
 
@@ -674,9 +672,8 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
     from ..llm_utils import request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency
 
     #  <-------- 寻找主tex文件 ---------->
-    maintex = find_main_tex_file(file_manifest, mode)
+    maintex = find_main_tex_file(file_manifest)
     logger.info(f"定位主Latex文件: 分析结果：该项目的Latex主文件是{maintex}")
-    pass # 刷新界面
     time.sleep(3)
 
     #  <-------- 读取Latex文件, 将多文件tex工程融合为一个巨型tex ---------->
@@ -698,10 +695,9 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
 
     #  <-------- 精细切分latex文件 ---------->
     logger.info("Latex文件融合完成: 正在精细切分latex文件，这需要一段时间计算...")
-    pass # 刷新界面
     lps = LatexPaperSplit()
     lps.read_title_and_abstract(merged_content)
-    res = lps.split(merged_content, project_folder, opts) # 消耗时间的函数
+    res = lps.split(merged_content, project_folder) # 消耗时间的函数
     #  <-------- 拆分过长的latex片段 ---------->
     pfg = LatexPaperFileGroup()
     for index, r in enumerate(res):
@@ -733,11 +729,8 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
             inputs_array=inputs_array,
             inputs_show_user_array=inputs_show_user_array,
             llm_kwargs=llm_kwargs,
-            chatbot=None,
             history_array=history_array,
             sys_prompt_array=sys_prompt_array,
-            # max_workers=5,  # 并行任务数量限制, 最多同时执行5个, 其他的排队等待
-            scroller_max_len = 40
         )
 
         #  <-------- 文本碎片重组为完整的tex片段 ---------->
@@ -762,7 +755,6 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
 
     #  <-------- 整理结果, 退出 ---------->
     logger.info("完成了吗？: GPT结果已输出, 即将编译PDF")
-    pass # 刷新界面
 
     #  <-------- 生成中英对照tex文件 ---------->
     if mode == 'translate_zh':

@@ -94,9 +94,9 @@ def can_multi_process(llm) -> bool:
 
 def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
         inputs_array, inputs_show_user_array, llm_kwargs,
-        chatbot, history_array, sys_prompt_array,
-        refresh_interval=0.2, max_workers=-1, scroller_max_len=75,
-        handle_token_exceed=True, show_user_at_complete=False,
+        history_array, sys_prompt_array,
+        max_workers=-1,
+        handle_token_exceed=True,
         retry_times_at_unknown_error=2,
         ):
     """
@@ -109,14 +109,10 @@ def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
         inputs_array: 输入文本数组
         inputs_show_user_array: 显示给用户的输入标签数组
         llm_kwargs: LLM参数字典
-        chatbot: 聊天机器人对象（当前未使用）
         history_array: 每个请求的历史记录数组
         sys_prompt_array: 每个请求的系统提示词数组
-        refresh_interval: 刷新间隔（未使用）
         max_workers: 最大工作线程数，-1表示使用配置默认值
-        scroller_max_len: 滚动条最大长度（未使用）
         handle_token_exceed: 是否处理token溢出问题
-        show_user_at_complete: 是否在完成时显示用户（未使用）
         retry_times_at_unknown_error: 未知错误时的重试次数
 
     Returns:

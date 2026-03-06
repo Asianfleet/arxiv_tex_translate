@@ -372,7 +372,7 @@ Latex Merge File
 """
 
 
-def find_main_tex_file(file_manifest, mode):
+def find_main_tex_file(file_manifest):
     r"""
     在多Tex文档中寻找主文件。
 
@@ -382,7 +382,6 @@ def find_main_tex_file(file_manifest, mode):
 
     Args:
         file_manifest: tex文件路径列表
-        mode: 处理模式
 
     Returns:
         主tex文件的完整路径
@@ -501,7 +500,7 @@ def find_tex_file_ignore_case(fp):
     return None
 
 
-def merge_tex_files_(project_foler, main_file, mode):
+def merge_tex_files_(project_foler, main_file):
     r"""
     递归合并LaTeX项目的所有文件（内部辅助函数）。
 
@@ -510,7 +509,6 @@ def merge_tex_files_(project_foler, main_file, mode):
     Args:
         project_foler: 项目文件夹路径
         main_file: 主文件内容
-        mode: 处理模式
 
     Returns:
         合并后的文件内容
@@ -528,7 +526,7 @@ def merge_tex_files_(project_foler, main_file, mode):
                 c = f"\n\nWarning from GPT-Academic: LaTex source file is missing!\n\n"
         else:
             raise RuntimeError(f"找不到{fp}，Tex源文件缺失！")
-        c = merge_tex_files_(project_foler, c, mode)
+        c = merge_tex_files_(project_foler, c)
         main_file = main_file[: s.span()[0]] + c + main_file[s.span()[1] :]
     return main_file
 
@@ -600,7 +598,7 @@ def merge_tex_files(project_foler, main_file, mode):
     Returns:
         合并后的完整文件内容
     """
-    main_file = merge_tex_files_(project_foler, main_file, mode)
+    main_file = merge_tex_files_(project_foler, main_file)
     main_file = rm_comments(main_file)
 
     if mode == "translate_zh":
