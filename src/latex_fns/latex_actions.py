@@ -372,8 +372,6 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
         pfg.get_token_num = None
         objdump(pfg, file=pj(project_folder,'temp.pkl'))
 
-    write_html(pfg.sp_file_contents, pfg.sp_file_result, project_folder=project_folder)
-
     #  <-------- 写出文件 ---------->
     model_name = llm_kwargs['llm_model'].replace('_', '\\_')  # 替换LLM模型名称中的下划线为转义字符
     msg = f"当前大语言模型: {model_name}，当前语言模型温度设定: {llm_kwargs['temperature']}。"
@@ -557,18 +555,6 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
             if os.path.exists(pj(work_folder, '..', 'translation')):
                 shutil.copyfile(result_pdf, pj(work_folder, '..', 'translation', 'translate_zh.pdf'))
             pass  # promote file to web UI
-            # 将两个PDF拼接
-            if original_pdf_success:
-                try:
-                    from .latex_toolbox import merge_pdfs
-                    concat_pdf = pj(work_folder_modified, f'comparison.pdf')
-                    merge_pdfs(origin_pdf, result_pdf, concat_pdf)
-                    if os.path.exists(pj(work_folder, '..', 'translation')):
-                        shutil.copyfile(concat_pdf, pj(work_folder, '..', 'translation', 'comparison.pdf'))
-                    pass  # promote file to web UI
-                except Exception as e:
-                    logger.error(e)
-                    pass
             return True # 成功啦
         else:
             if n_fix>=max_try: break
@@ -586,23 +572,3 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
             if not can_retry: break
 
     return False # 失败啦
-
-
-def write_html(sp_file_contents, sp_file_result, project_folder):
-    """
-    将处理结果写入HTML文件（当前已禁用）。
-
-    Args:
-        sp_file_contents: 原始文件内容列表
-        sp_file_result: 处理后的文件结果列表
-        project_folder: 项目文件夹路径
-    """
-    # write html
-    try:
-        import shutil
-        # HTML generation disabled for standalone version
-        pass
-        pass
-    except:
-        from utils import trimmed_format_exc
-        logger.error('writing html result failed:', trimmed_format_exc())

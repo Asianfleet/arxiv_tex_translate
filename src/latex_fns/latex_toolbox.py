@@ -189,7 +189,7 @@ Latex segmentation with a binary mask (PRESERVE=0, TRANSFORM=1)
 
 
 def set_forbidden_text(text, mask, pattern, flags=0):
-    """
+    r"""
     在LaTeX文档中标记保留文本区域。
 
     将匹配正则表达式的文本区域标记为PRESERVE，使GPT不会处理这些区域。
@@ -214,7 +214,7 @@ def set_forbidden_text(text, mask, pattern, flags=0):
 
 
 def reverse_forbidden_text(text, mask, pattern, flags=0, forbid_wrapper=True):
-    """
+    r"""
     将保留区域中的部分内容转为可编辑区域（供GPT处理）。
 
     例如对于 \begin{abstract} 内容 \end{abstract}，可以将中间的内容部分
@@ -244,7 +244,7 @@ def reverse_forbidden_text(text, mask, pattern, flags=0, forbid_wrapper=True):
 
 
 def set_forbidden_text_careful_brace(text, mask, pattern, flags=0):
-    """
+    r"""
     通过计算大括号层级来精确标记保留区域。
 
     适用于包含嵌套大括号的复杂结构，如：
@@ -279,7 +279,7 @@ def set_forbidden_text_careful_brace(text, mask, pattern, flags=0):
 def reverse_forbidden_text_careful_brace(
     text, mask, pattern, flags=0, forbid_wrapper=True
 ):
-    """
+    r"""
     通过计算大括号层级，将保留区域中的部分内容转为可编辑区域。
 
     适用于包含嵌套大括号的复杂结构，可以精确识别出可编辑的内部内容。
@@ -316,7 +316,7 @@ def reverse_forbidden_text_careful_brace(
 
 
 def set_forbidden_text_begin_end(text, mask, pattern, flags=0, limit_n_lines=42):
-    """
+    r"""
     查找所有行数小于限制的\begin{}...\end{}文本块并标记为保留区域。
 
     对于白名单中的环境（如document、abstract等）或行数超过限制的内容，
@@ -373,7 +373,7 @@ Latex Merge File
 
 
 def find_main_tex_file(file_manifest, mode):
-    """
+    r"""
     在多Tex文档中寻找主文件。
 
     主文件必须包含\documentclass。如果找到多个候选文件，
@@ -435,7 +435,7 @@ def find_main_tex_file(file_manifest, mode):
 
 
 def rm_comments(main_file):
-    """
+    r"""
     移除LaTeX文件中的注释。
 
     删除整行注释（以%开头的行）和行内注释（%后的内容）。
@@ -502,7 +502,7 @@ def find_tex_file_ignore_case(fp):
 
 
 def merge_tex_files_(project_foler, main_file, mode):
-    """
+    r"""
     递归合并LaTeX项目的所有文件（内部辅助函数）。
 
     处理\input命令，将引用的外部文件内容嵌入到主文件中。
@@ -534,7 +534,7 @@ def merge_tex_files_(project_foler, main_file, mode):
 
 
 def find_title_and_abs(main_file):
-    """
+    r"""
     从LaTeX文件中提取标题和摘要。
 
     支持两种摘要格式：
@@ -583,7 +583,7 @@ def find_title_and_abs(main_file):
 
 
 def merge_tex_files(project_foler, main_file, mode):
-    """
+    r"""
     递归合并LaTeX项目的所有文件。
 
     主要功能：
@@ -648,7 +648,7 @@ The GPT-Academic program cannot find abstract section in this paper.
 
 
 def insert_abstract(tex_content):
-    """
+    r"""
     在LaTeX文档中插入缺失的摘要环境。
 
     尝试在\maketitle或\begin{document}之后插入默认的摘要。
@@ -749,7 +749,7 @@ def fix_content(final_tex, node_string):
         final_tex = node_string  # 出问题了，还原原文
     if node_string.count("\\begin") != final_tex.count("\\begin"):
         final_tex = node_string  # 出问题了，还原原文
-    if node_string.count("\_") > 0 and node_string.count("\_") > final_tex.count("\_"):
+    if node_string.count(r"\_") > 0 and node_string.count(r"\_") > final_tex.count(r"\_"):
         # walk and replace any _ without \
         final_tex = re.sub(r"(?<!\\)_", "\\_", final_tex)
 
@@ -837,13 +837,15 @@ def run_in_subprocess_wrapper_func(func, args, kwargs, return_dict, exception_di
         exception_dict: 用于存储异常的共享字典
     """
     import sys
+    import traceback
 
     try:
         result = func(*args, **kwargs)
         return_dict["result"] = result
     except Exception as e:
-        exc_info = sys.exc_info()
-        exception_dict["exception"] = exc_info
+        exc_type, exc_value, exc_tb = sys.exc_info()
+        # 将异常信息转为可序列化的格式（traceback对象无法被pickle）
+        exception_dict["exception"] = (exc_type.__name__, str(exc_value), traceback.format_exc())
 
 
 def run_in_subprocess(func):
@@ -873,8 +875,8 @@ def run_in_subprocess(func):
         process.close()
         if "exception" in exception_dict:
             # ooops, the subprocess ran into an exception
-            exc_info = exception_dict["exception"]
-            raise exc_info[1].with_traceback(exc_info[2])
+            exc_type_name, exc_value_str, exc_traceback_str = exception_dict["exception"]
+            raise RuntimeError(f"子进程异常: {exc_type_name}: {exc_value_str}\n\n详细错误:\n{exc_traceback_str}")
         if "result" in return_dict.keys():
             # If the subprocess ran successfully, return the result
             return return_dict["result"]
@@ -882,292 +884,3 @@ def run_in_subprocess(func):
     return wrapper
 
 
-def _merge_pdfs(pdf1_path, pdf2_path, output_path):
-    """
-    合并两个PDF文件，先尝试新方法，失败后使用旧方法。
-
-    Args:
-        pdf1_path: 第一个PDF文件路径
-        pdf2_path: 第二个PDF文件路径
-        output_path: 输出PDF文件路径
-    """
-    try:
-        logger.info("Merging PDFs using _merge_pdfs_ng")
-        _merge_pdfs_ng(pdf1_path, pdf2_path, output_path)
-    except:
-        logger.info("Merging PDFs using _merge_pdfs_legacy")
-        _merge_pdfs_legacy(pdf1_path, pdf2_path, output_path)
-
-
-def _merge_pdfs_ng(pdf1_path, pdf2_path, output_path):
-    """
-    合并两个PDF文件（新版本），支持链接跳转。
-
-    将两个PDF并排显示在一张页面上（横向拼接），并保留内部和外部链接。
-
-    Args:
-        pdf1_path: 第一个PDF文件路径
-        pdf2_path: 第二个PDF文件路径
-        output_path: 输出PDF文件路径
-    """
-    import PyPDF2  # PyPDF2这个库有严重的内存泄露问题，把它放到子进程中运行，从而方便内存的释放
-    from PyPDF2.generic import NameObject, TextStringObject, ArrayObject, FloatObject, NumberObject
-
-    Percent = 1
-    # raise RuntimeError('PyPDF2 has a serious memory leak problem, please use other tools to merge PDF files.')
-    # Open the first PDF file
-    with open(pdf1_path, "rb") as pdf1_file:
-        pdf1_reader = PyPDF2.PdfFileReader(pdf1_file)
-        # Open the second PDF file
-        with open(pdf2_path, "rb") as pdf2_file:
-            pdf2_reader = PyPDF2.PdfFileReader(pdf2_file)
-            # Create a new PDF file to store the merged pages
-            output_writer = PyPDF2.PdfFileWriter()
-            # Determine the number of pages in each PDF file
-            num_pages = max(pdf1_reader.numPages, pdf2_reader.numPages)
-            # Merge the pages from the two PDF files
-            for page_num in range(num_pages):
-                # Add the page from the first PDF file
-                if page_num < pdf1_reader.numPages:
-                    page1 = pdf1_reader.getPage(page_num)
-                else:
-                    page1 = PyPDF2.PageObject.createBlankPage(pdf1_reader)
-                # Add the page from the second PDF file
-                if page_num < pdf2_reader.numPages:
-                    page2 = pdf2_reader.getPage(page_num)
-                else:
-                    page2 = PyPDF2.PageObject.createBlankPage(pdf1_reader)
-                # Create a new empty page with double width
-                new_page = PyPDF2.PageObject.createBlankPage(
-                    width=int(
-                        int(page1.mediaBox.getWidth())
-                        + int(page2.mediaBox.getWidth()) * Percent
-                    ),
-                    height=max(page1.mediaBox.getHeight(), page2.mediaBox.getHeight()),
-                )
-                new_page.mergeTranslatedPage(page1, 0, 0)
-                new_page.mergeTranslatedPage(
-                    page2,
-                    int(
-                        int(page1.mediaBox.getWidth())
-                        - int(page2.mediaBox.getWidth()) * (1 - Percent)
-                    ),
-                    0,
-                )
-                if "/Annots" in new_page:
-                    annotations = new_page["/Annots"]
-                    for i, annot in enumerate(annotations):
-                        annot_obj = annot.get_object()
-
-                        # 检查注释类型是否是链接（/Link）
-                        if annot_obj.get("/Subtype") == "/Link":
-                            # 检查是否为内部链接跳转（/GoTo）或外部URI链接（/URI）
-                            action = annot_obj.get("/A")
-                            if action:
-
-                                if "/S" in action and action["/S"] == "/GoTo":
-                                    # 内部链接：跳转到文档中的某个页面
-                                    dest = action.get("/D")  # 目标页或目标位置
-                                    # if dest and annot.idnum in page2_annot_id:
-                                    # if dest in pdf2_reader.named_destinations:
-                                    if dest and page2.annotations:
-                                        if annot in page2.annotations:
-                                            # 获取原始文件中跳转信息，包括跳转页面
-                                            destination = pdf2_reader.named_destinations[
-                                                dest
-                                            ]
-                                            page_number = (
-                                                pdf2_reader.get_destination_page_number(
-                                                    destination
-                                                )
-                                            )
-                                            # 更新跳转信息，跳转到对应的页面和，指定坐标 (100, 150)，缩放比例为 100%
-                                            # “/D”:[10,'/XYZ',100,100,0]
-                                            if destination.dest_array[1] == "/XYZ":
-                                                annot_obj["/A"].update(
-                                                    {
-                                                        NameObject("/D"): ArrayObject(
-                                                            [
-                                                                NumberObject(page_number),
-                                                                destination.dest_array[1],
-                                                                FloatObject(
-                                                                    destination.dest_array[
-                                                                        2
-                                                                    ]
-                                                                    + int(
-                                                                        page1.mediaBox.getWidth()
-                                                                    )
-                                                                ),
-                                                                destination.dest_array[3],
-                                                                destination.dest_array[4],
-                                                            ]
-                                                        )  # 确保键和值是 PdfObject
-                                                    }
-                                                )
-                                            else:
-                                                annot_obj["/A"].update(
-                                                    {
-                                                        NameObject("/D"): ArrayObject(
-                                                            [
-                                                                NumberObject(page_number),
-                                                                destination.dest_array[1],
-                                                            ]
-                                                        )  # 确保键和值是 PdfObject
-                                                    }
-                                                )
-
-                                            rect = annot_obj.get("/Rect")
-                                            # 更新点击坐标
-                                            rect = ArrayObject(
-                                                [
-                                                    FloatObject(
-                                                        rect[0]
-                                                        + int(page1.mediaBox.getWidth())
-                                                    ),
-                                                    rect[1],
-                                                    FloatObject(
-                                                        rect[2]
-                                                        + int(page1.mediaBox.getWidth())
-                                                    ),
-                                                    rect[3],
-                                                ]
-                                            )
-                                            annot_obj.update(
-                                                {
-                                                    NameObject(
-                                                        "/Rect"
-                                                    ): rect  # 确保键和值是 PdfObject
-                                                }
-                                            )
-                                    # if dest and annot.idnum in page1_annot_id:
-                                    # if dest in pdf1_reader.named_destinations:
-                                    if dest and page1.annotations:
-                                        if annot in page1.annotations:
-                                            # 获取原始文件中跳转信息，包括跳转页面
-                                            destination = pdf1_reader.named_destinations[
-                                                dest
-                                            ]
-                                            page_number = (
-                                                pdf1_reader.get_destination_page_number(
-                                                    destination
-                                                )
-                                            )
-                                            # 更新跳转信息，跳转到对应的页面和，指定坐标 (100, 150)，缩放比例为 100%
-                                            # “/D”:[10,'/XYZ',100,100,0]
-                                            if destination.dest_array[1] == "/XYZ":
-                                                annot_obj["/A"].update(
-                                                    {
-                                                        NameObject("/D"): ArrayObject(
-                                                            [
-                                                                NumberObject(page_number),
-                                                                destination.dest_array[1],
-                                                                FloatObject(
-                                                                    destination.dest_array[
-                                                                        2
-                                                                    ]
-                                                                ),
-                                                                destination.dest_array[3],
-                                                                destination.dest_array[4],
-                                                            ]
-                                                        )  # 确保键和值是 PdfObject
-                                                    }
-                                                )
-                                            else:
-                                                annot_obj["/A"].update(
-                                                    {
-                                                        NameObject("/D"): ArrayObject(
-                                                            [
-                                                                NumberObject(page_number),
-                                                                destination.dest_array[1],
-                                                            ]
-                                                        )  # 确保键和值是 PdfObject
-                                                    }
-                                                )
-
-                                            rect = annot_obj.get("/Rect")
-                                            rect = ArrayObject(
-                                                [
-                                                    FloatObject(rect[0]),
-                                                    rect[1],
-                                                    FloatObject(rect[2]),
-                                                    rect[3],
-                                                ]
-                                            )
-                                            annot_obj.update(
-                                                {
-                                                    NameObject(
-                                                        "/Rect"
-                                                    ): rect  # 确保键和值是 PdfObject
-                                                }
-                                            )
-
-                                elif "/S" in action and action["/S"] == "/URI":
-                                    # 外部链接：跳转到某个URI
-                                    uri = action.get("/URI")
-                output_writer.addPage(new_page)
-            # Save the merged PDF file
-            with open(output_path, "wb") as output_file:
-                output_writer.write(output_file)
-
-
-def _merge_pdfs_legacy(pdf1_path, pdf2_path, output_path):
-    """
-    合并两个PDF文件（旧版本），不支持链接跳转。
-
-    将两个PDF并排显示在一张页面上（横向拼接）。
-
-    Args:
-        pdf1_path: 第一个PDF文件路径
-        pdf2_path: 第二个PDF文件路径
-        output_path: 输出PDF文件路径
-    """
-    import PyPDF2  # PyPDF2这个库有严重的内存泄露问题，把它放到子进程中运行，从而方便内存的释放
-
-    Percent = 0.95
-    # raise RuntimeError('PyPDF2 has a serious memory leak problem, please use other tools to merge PDF files.')
-    # Open the first PDF file
-    with open(pdf1_path, "rb") as pdf1_file:
-        pdf1_reader = PyPDF2.PdfFileReader(pdf1_file)
-        # Open the second PDF file
-        with open(pdf2_path, "rb") as pdf2_file:
-            pdf2_reader = PyPDF2.PdfFileReader(pdf2_file)
-            # Create a new PDF file to store the merged pages
-            output_writer = PyPDF2.PdfFileWriter()
-            # Determine the number of pages in each PDF file
-            num_pages = max(pdf1_reader.numPages, pdf2_reader.numPages)
-            # Merge the pages from the two PDF files
-            for page_num in range(num_pages):
-                # Add the page from the first PDF file
-                if page_num < pdf1_reader.numPages:
-                    page1 = pdf1_reader.getPage(page_num)
-                else:
-                    page1 = PyPDF2.PageObject.createBlankPage(pdf1_reader)
-                # Add the page from the second PDF file
-                if page_num < pdf2_reader.numPages:
-                    page2 = pdf2_reader.getPage(page_num)
-                else:
-                    page2 = PyPDF2.PageObject.createBlankPage(pdf1_reader)
-                # Create a new empty page with double width
-                new_page = PyPDF2.PageObject.createBlankPage(
-                    width=int(
-                        int(page1.mediaBox.getWidth())
-                        + int(page2.mediaBox.getWidth()) * Percent
-                    ),
-                    height=max(page1.mediaBox.getHeight(), page2.mediaBox.getHeight()),
-                )
-                new_page.mergeTranslatedPage(page1, 0, 0)
-                new_page.mergeTranslatedPage(
-                    page2,
-                    int(
-                        int(page1.mediaBox.getWidth())
-                        - int(page2.mediaBox.getWidth()) * (1 - Percent)
-                    ),
-                    0,
-                )
-                output_writer.addPage(new_page)
-            # Save the merged PDF file
-            with open(output_path, "wb") as output_file:
-                output_writer.write(output_file)
-
-
-merge_pdfs = run_in_subprocess(_merge_pdfs)  # PyPDF2这个库有严重的内存泄露问题，把它放到子进程中运行，从而方便内存的释放
