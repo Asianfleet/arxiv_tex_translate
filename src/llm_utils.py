@@ -80,23 +80,17 @@ def can_multi_process(llm) -> bool:
     Returns:
         是否支持多线程
     """
-    def default_condition(llm) -> bool:
-        """默认的多线程支持判断条件。"""
-        if llm.startswith('gpt-'): return True
-        if llm.startswith('chatgpt-'): return True
-        if llm.startswith('api2d-'): return True
-        if llm.startswith('azure-'): return True
-        if llm.startswith('spark'): return True
-        if llm.startswith('zhipuai') or llm.startswith('glm-'): return True
-        return False
+    # 优先从 model_info 获取配置
+    if llm in model_info and 'can_multi_thread' in model_info[llm]:
+        return model_info[llm]['can_multi_thread']
 
-    if llm in model_info:
-        if 'can_multi_thread' in model_info[llm]:
-            return model_info[llm]['can_multi_thread']
-        else:
-            return default_condition(llm)
-    else:
-        return default_condition(llm)
+    # 支持多线程的模型前缀集合
+    multi_thread_prefixes = {
+        'gpt-', 'chatgpt-', 'api2d-', 'azure-',
+        'spark', 'zhipuai', 'glm-', 'qwen'
+    }
+
+    return any(llm.startswith(prefix) for prefix in multi_thread_prefixes)
 
 def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
         inputs_array, inputs_show_user_array, llm_kwargs,

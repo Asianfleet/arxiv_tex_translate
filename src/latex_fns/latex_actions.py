@@ -94,6 +94,384 @@ def split_subprocess(txt, project_folder, return_dict, opts):
     return_dict['segment_parts_for_gpt'] = segment_parts_for_gpt
     return return_dict
 
+
+class BilingualTexMerger:
+    """中英对照 LaTeX 合并器。"""
+
+    @staticmethod
+    def _find_first_match_position(text, patterns, start=0):
+        """返回多个正则中最早匹配的位置。"""
+        positions = []
+        for pattern, flags in patterns:
+            match = re.search(pattern, text[start:], flags)
+            if match:
+                positions.append(start + match.start())
+        return min(positions) if positions else None
+
+    @staticmethod
+    def _normalize_bilingual_root(root):
+        """
+        对中英对照切分结果做轻量归一化。
+
+        与 `post_process` 不同，这里不会根据段落长度强行转为保留区，
+        以避免中英文长度差异导致分段数量不一致。
+        """
+        node = root
+        while True:
+            if len(node.string.strip()) == 0:
+                node.preserve = True
+            node = node.next
+            if node is None:
+                break
+
+        node = root
+        while True:
+            if node.next and node.preserve and node.next.preserve:
+                node.string += node.next.string
+                node.next = node.next.next
+                continue
+            node = node.next
+            if node is None:
+                break
+
+        node = root
+        prev_node = None
+        while True:
+            if not node.preserve:
+                lstriped_ = node.string.lstrip().lstrip("\n")
+                if (
+                    (prev_node is not None)
+                    and prev_node.preserve
+                    and (len(lstriped_) != len(node.string))
+                ):
+                    prev_node.string += node.string[: -len(lstriped_)]
+                    node.string = lstriped_
+                rstriped_ = node.string.rstrip().rstrip("\n")
+                if (
+                    (node.next is not None)
+                    and node.next.preserve
+                    and (len(rstriped_) != len(node.string))
+                ):
+                    node.next.string = node.string[len(rstriped_) :] + node.next.string
+                    node.string = rstriped_
+            prev_node = node
+            node = node.next
+            if node is None:
+                break
+
+        return root
+
+    @classmethod
+    def split_bilingual_body_subprocess(cls, txt, return_dict):
+        """
+        仅切分正文段落，用于生成中英对照版本。
+
+        规则：
+        1. 仅处理首个 `\\section` 之后到附录/参考文献/致谢之前的正文
+        2. 图表、公式、标题、caption、摘要等保持为保留区
+        3. 只把普通正文段落作为可转换区域
+        """
+        text = txt
+        mask = np.zeros(len(txt), dtype=np.uint8) + PRESERVE
+
+        body_start = cls._find_first_match_position(
+            text,
+            [
+                (r"\\section\*\{", 0),
+                (r"\\section\{", 0),
+            ],
+        )
+        if body_start is None:
+            raise ValueError("无法在 LaTeX 文档中找到正文起始 section。")
+
+        body_end = cls._find_first_match_position(
+            text,
+            [
+                (r"\\appendix\b", 0),
+                (r"\\bibliography\{", 0),
+                (r"\\begin\{thebibliography\}", 0),
+                (r"\\section\*\{Acknowledg?ements\}", re.IGNORECASE),
+                (r"\\section\*\{Author Contributions\}", re.IGNORECASE),
+                (r"\\section\*\{References\}", re.IGNORECASE),
+            ],
+            start=body_start,
+        )
+        if body_end is None:
+            body_end = len(text)
+
+        mask[body_start:body_end] = TRANSFORM
+
+        def apply_forbidden(pattern, flags=0):
+            nonlocal text, mask
+            text, mask = set_forbidden_text(text, mask, pattern, flags)
+
+        text, mask = set_forbidden_text_begin_end(
+            text,
+            mask,
+            r"\\begin\{([a-zA-Z\*]+)\}(.*?)\\end\{\1\}",
+            re.DOTALL,
+            limit_n_lines=42,
+        )
+
+        forbidden_patterns = [
+            (r"^\{\s*$.*?^\}\s*$", re.DOTALL | re.MULTILINE),
+            ([r"\\section\{(.*?)\}", r"\\section\*\{(.*?)\}", r"\\subsection\{(.*?)\}", r"\\subsection\*\{(.*?)\}", r"\\subsubsection\{(.*?)\}", r"\\subsubsection\*\{(.*?)\}"], 0),
+            (r"\\begin\{[a-zA-Z\*]*abstract[a-zA-Z\*]*\}(.*?)\\end\{[a-zA-Z\*]*abstract[a-zA-Z\*]*\}", re.DOTALL),
+            (r"\\begin\{thebibliography\}.*?\\end\{thebibliography\}", re.DOTALL),
+            (r"\\begin\{lstlisting\}(.*?)\\end\{lstlisting\}", re.DOTALL),
+            (r"\\begin\{algorithm\}(.*?)\\end\{algorithm\}", re.DOTALL),
+            (r"\\begin\{algorithm\*\}(.*?)\\end\{algorithm\*\}", re.DOTALL),
+            (r"\\begin\{wraptable\}(.*?)\\end\{wraptable\}", re.DOTALL),
+            (r"\\begin\{wrapfigure\}(.*?)\\end\{wrapfigure\}", re.DOTALL),
+            (r"\\begin\{wrapfigure\*\}(.*?)\\end\{wrapfigure\*\}", re.DOTALL),
+            (r"\\begin\{figure\}(.*?)\\end\{figure\}", re.DOTALL),
+            (r"\\begin\{figure\*\}(.*?)\\end\{figure\*\}", re.DOTALL),
+            (r"\\begin\{table\}(.*?)\\end\{table\}", re.DOTALL),
+            (r"\\begin\{table\*\}(.*?)\\end\{table\*\}", re.DOTALL),
+            (r"\\begin\{tabular\}(.*?)\\end\{tabular\}", re.DOTALL),
+            (r"\\begin\{tabularx\}(.*?)\\end\{tabularx\}", re.DOTALL),
+            (r"\\begin\{longtable\}(.*?)\\end\{longtable\}", re.DOTALL),
+            (r"\\begin\{minipage\}(.*?)\\end\{minipage\}", re.DOTALL),
+            (r"\\begin\{multline\}(.*?)\\end\{multline\}", re.DOTALL),
+            (r"\\begin\{multline\*\}(.*?)\\end\{multline\*\}", re.DOTALL),
+            (r"\\begin\{align\}(.*?)\\end\{align\}", re.DOTALL),
+            (r"\\begin\{align\*\}(.*?)\\end\{align\*\}", re.DOTALL),
+            (r"\\begin\{equation\}(.*?)\\end\{equation\}", re.DOTALL),
+            (r"\\begin\{equation\*\}(.*?)\\end\{equation\*\}", re.DOTALL),
+            ([r"\$\$([^$]+)\$\$", r"\\\[.*?\\\]"], re.DOTALL),
+            ([r"\\bibliography\{(.*?)\}", r"\\bibliographystyle\{(.*?)\}", r"\\appendix", r"\\tableofcontents", r"\\clearpage", r"\\newpage"], 0),
+            ([r"\\vspace\{(.*?)\}", r"\\hspace\{(.*?)\}", r"\\label\{(.*?)\}", r"\\begin\{(.*?)\}", r"\\end\{(.*?)\}", r"\\item "], 0),
+        ]
+        for pattern, flags in forbidden_patterns:
+            apply_forbidden(pattern, flags)
+
+        text, mask = set_forbidden_text_careful_brace(
+            text, mask, r"\\caption\{(.*?)\}", re.DOTALL
+        )
+        text, mask = set_forbidden_text_careful_brace(
+            text, mask, r"\\captionof\{(.*?)\}\{", re.DOTALL
+        )
+
+        root = convert_to_linklist(text, mask)
+        root = cls._normalize_bilingual_root(root)
+
+        nodes = []
+        segment_parts_for_bilingual = []
+        node = root
+        while True:
+            nodes.append(node)
+            if not node.preserve:
+                segment_parts_for_bilingual.append(node.string)
+            node = node.next
+            if node is None:
+                break
+
+        for n in nodes:
+            n.next = None
+
+        return_dict["nodes"] = nodes
+        return_dict["segment_parts_for_bilingual"] = segment_parts_for_bilingual
+        return return_dict
+
+    @classmethod
+    def split_bilingual_body(cls, txt):
+        """同步切分正文段落，返回节点和正文片段。"""
+        return_dict = {}
+        cls.split_bilingual_body_subprocess(txt, return_dict)
+        return return_dict["nodes"], return_dict["segment_parts_for_bilingual"]
+
+    @staticmethod
+    def _deduplicate_preamble_usepackages(tex_content):
+        """
+        对导言区中完全相同的 `\\usepackage` 行做去重。
+
+        只处理 `\\begin{document}` 之前的内容，且仅移除字面完全相同的包声明，
+        避免误伤带不同选项或确有顺序依赖的语句。
+        """
+        begin_doc_match = re.search(r"\\begin\{document\}", tex_content)
+        if not begin_doc_match:
+            return tex_content
+
+        preamble = tex_content[: begin_doc_match.start()]
+        body = tex_content[begin_doc_match.start() :]
+        deduped_lines = []
+        seen_usepackages = set()
+
+        for line in preamble.splitlines(keepends=True):
+            normalized = line.strip()
+            if normalized.startswith(r"\usepackage"):
+                if normalized in seen_usepackages:
+                    continue
+                seen_usepackages.add(normalized)
+            deduped_lines.append(line)
+
+        return "".join(deduped_lines) + body
+
+    @classmethod
+    def ensure_bilingual_preamble(cls, tex_content, color_name="bilingualzhcolor"):
+        """为中英对照文档注入颜色定义。"""
+        tex_content = cls._deduplicate_preamble_usepackages(tex_content)
+
+        if f"\\definecolor{{{color_name}}}" in tex_content:
+            return tex_content
+
+        if "{xcolor}" not in tex_content:
+            pattern = re.compile(r"\\documentclass.*\n")
+            match = pattern.search(tex_content)
+            if not match:
+                raise ValueError("无法在 LaTeX 文档中找到 documentclass。")
+            position = match.end()
+            tex_content = (
+                tex_content[:position]
+                + "\\usepackage{xcolor}\n"
+                + tex_content[position:]
+            )
+
+        color_def = f"\\definecolor{{{color_name}}}{{RGB}}{{128,128,128}}\n"
+        begin_doc_match = re.search(r"\\begin\{document\}", tex_content)
+        if begin_doc_match:
+            position = begin_doc_match.start()
+            return tex_content[:position] + color_def + tex_content[position:]
+        return tex_content + "\n" + color_def
+
+    @staticmethod
+    def _split_tex_paragraphs(text):
+        """按 LaTeX 空行拆分段落。"""
+        return [p.strip() for p in re.split(r"\n\s*\n+", text.strip()) if p.strip()]
+
+    @staticmethod
+    def _can_paragraph_split_segment(text):
+        """
+        判断一个正文块是否适合继续按段落细分。
+
+        只在“纯文本段落”场景下细分；若块中包含环境边界、列表项、
+        单独的大括号或显示公式边界，则整体保留，避免破坏 LaTeX 结构。
+        """
+        if not text.strip():
+            return False
+
+        structural_patterns = [
+            r"^\s*\\begin\{",
+            r"^\s*\\end\{",
+            r"^\s*\\item\b",
+            r"^\s*[\{\}]\s*$",
+            r"^\s*\$\$\s*$",
+            r"^\s*\\\[\s*$",
+            r"^\s*\\\]\s*$",
+        ]
+        return not any(
+            re.search(pattern, text, flags=re.MULTILINE)
+            for pattern in structural_patterns
+        )
+
+    @classmethod
+    def _render_bilingual_segment(cls, en_text, zh_text, zh_color):
+        """
+        将一个正文块渲染为中英对照。
+
+        如果中英块都能按空行拆成相同数量的段落，则逐段交错输出；
+        否则退化为整块英文后跟整块中文，避免误配段落。
+        """
+        en_paragraphs = cls._split_tex_paragraphs(en_text)
+        zh_paragraphs = cls._split_tex_paragraphs(zh_text)
+
+        if (
+            len(en_paragraphs) > 1
+            and zh_paragraphs
+            and cls._can_paragraph_split_segment(en_text)
+            and cls._can_paragraph_split_segment(zh_text)
+        ):
+            zh_groups = []
+            zh_count = len(zh_paragraphs)
+            en_count = len(en_paragraphs)
+            for i in range(en_count):
+                start = round(i * zh_count / en_count)
+                end = round((i + 1) * zh_count / en_count)
+                if end <= start:
+                    end = min(start + 1, zh_count)
+                zh_groups.append("\n\n".join(zh_paragraphs[start:end]).strip())
+
+            rendered = []
+            for en_para, zh_para in zip(en_paragraphs, zh_groups):
+                rendered.append(en_para)
+                if zh_para:
+                    rendered.append("")
+                    rendered.append(f"\\begingroup\\color{{{zh_color}}}")
+                    rendered.append(zh_para)
+                    rendered.append("\\par\\endgroup")
+                rendered.append("")
+            return "\n\n".join(rendered).strip() + "\n\n"
+
+        rendered = [en_text.rstrip()]
+        if zh_text.strip():
+            rendered.extend(
+                [
+                    "",
+                    f"\\begingroup\\color{{{zh_color}}}",
+                    zh_text.strip(),
+                    "\\par\\endgroup",
+                    "",
+                ]
+            )
+        return "\n\n".join(rendered).strip() + "\n\n"
+
+    @classmethod
+    def merge_bilingual_body_tex(
+        cls,
+        english_tex_path,
+        chinese_tex_path,
+        output_tex_path=None,
+        zh_color="bilingualzhcolor",
+    ):
+        """
+        将英文 `merge.tex` 与中文 `merge_translate_zh.tex` 合并为中英对照文档。
+
+        合并规则：
+        1. 以中文文档为骨架输出，因此标题、摘要、图片、表格等保持与中文翻译稿一致
+        2. 仅对正文段落做“英文后跟中文”的对照排版
+        3. 中文正文统一使用灰色显示
+        """
+        with open(english_tex_path, "r", encoding="utf-8", errors="replace") as f:
+            english_tex = f.read()
+        with open(chinese_tex_path, "r", encoding="utf-8", errors="replace") as f:
+            chinese_tex = f.read()
+
+        _, english_segments = cls.split_bilingual_body(english_tex)
+        chinese_nodes, chinese_segments = cls.split_bilingual_body(chinese_tex)
+
+        if len(english_segments) != len(chinese_segments):
+            raise ValueError(
+                "中英文正文段落切分数量不一致，无法安全合并。"
+                f" 英文段落数={len(english_segments)}，中文段落数={len(chinese_segments)}"
+            )
+
+        result_parts = []
+        segment_index = 0
+        for node in chinese_nodes:
+            if node.preserve:
+                result_parts.append(node.string)
+                continue
+
+            en_text = english_segments[segment_index].rstrip()
+            zh_text = chinese_segments[segment_index].strip()
+            result_parts.append(cls._render_bilingual_segment(en_text, zh_text, zh_color))
+            segment_index += 1
+
+        merged_tex = "".join(result_parts)
+        merged_tex = cls.ensure_bilingual_preamble(merged_tex, color_name=zh_color)
+
+        if output_tex_path is None:
+            output_tex_path = pj(
+                os.path.dirname(os.path.abspath(english_tex_path)),
+                "merge_bilingual_zh.tex",
+            )
+
+        with open(output_tex_path, "w", encoding="utf-8", errors="replace") as f:
+            f.write(merged_tex)
+        logger.info(f"已生成中英对照文档: {output_tex_path}")
+        return output_tex_path
+
+
 class LatexPaperSplit():
     """
     将LaTeX文件分解为链表，每个节点使用保留标志来指示是否应由GPT处理。
@@ -386,8 +764,19 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
     logger.info("完成了吗？: GPT结果已输出, 即将编译PDF")
     pass # 刷新界面
 
+    #  <-------- 生成中英对照tex文件 ---------->
+    if mode == 'translate_zh':
+        try:
+            BilingualTexMerger.merge_bilingual_body_tex(
+                english_tex_path=project_folder + '/merge.tex',
+                chinese_tex_path=project_folder + '/merge_translate_zh.tex',
+            )
+            logger.info("已生成中英对照tex文件: merge_bilingual_zh.tex")
+        except Exception as e:
+            logger.warning(f"生成中英对照文件时出错: {e}")
+
     #  <-------- 返回 ---------->
-    return project_folder + f'/merge_{mode}.tex'
+    return [project_folder + f'/merge_{mode}.tex', project_folder + f'/merge_bilingual_zh.tex']
 
 
 def remove_buggy_lines(file_path, log_path, tex_name, tex_name_pure, n_fix, work_folder_modified, fixed_line=[]):
@@ -431,7 +820,7 @@ def remove_buggy_lines(file_path, log_path, tex_name, tex_name_pure, n_fix, work
         return False, -1, [-1]
 
 
-def CompileLatex(main_file_original, main_file_modified, work_folder_original, work_folder_modified, work_folder, mode='default'):
+def CompileLatex(main_file_original, main_file_modified, work_folder_original, work_folder_modified, work_folder, mode='default', bilingual_file=None):
     """
     编译LaTeX文件生成PDF。
 
@@ -441,6 +830,7 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
     3. 处理bibtex引用
     4. 生成对比PDF（使用latexdiff）
     5. 如果编译失败，自动识别错误行并修复后重试
+    6. （可选）编译中英对照PDF
 
     Args:
         main_file_original: 原始主tex文件名（不含扩展名）
@@ -449,6 +839,7 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
         work_folder_modified: 修改后文件工作目录
         work_folder: 主工作目录
         mode: 编译模式，'default'默认或'translate_zh'翻译中文
+        bilingual_file: 中英对照tex文件名（不含扩展名），仅在mode='translate_zh'时生效
 
     Returns:
         bool: 编译是否成功
@@ -524,6 +915,20 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
             ok = compile_latex_with_timeout(get_compile_command(compiler, main_file_original), work_folder_original)
             ok = compile_latex_with_timeout(get_compile_command(compiler, main_file_modified), work_folder_modified)
 
+            # 编译中英对照PDF（在主文件交叉引用完成后）
+            bilingual_ok = True
+            if bilingual_file and os.path.exists(pj(work_folder_modified, f'{bilingual_file}.tex')):
+                logger.info(f'尝试第 {n_fix}/{max_try} 次编译, 编译中英对照PDF ...')
+                may_exist_bbl_bilingual = pj(work_folder_modified, f'{bilingual_file}.bbl')
+                if not os.path.exists(may_exist_bbl_bilingual) and os.path.exists(pj(work_folder_modified, 'merge.bbl')):
+                    shutil.copyfile(pj(work_folder_modified, 'merge.bbl'), may_exist_bbl_bilingual)
+                bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
+                if bilingual_ok and not os.path.exists(may_exist_bbl_bilingual):
+                    bilingual_ok = compile_latex_with_timeout(f'bibtex  {bilingual_file}.aux', work_folder_modified)
+                if bilingual_ok:
+                    bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
+                    bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
+
             if mode!='translate_zh':
                 logger.info(f'尝试第 {n_fix}/{max_try} 次编译, 使用latexdiff生成论文转化前后对比 ...') # 刷新Gradio前端界面
                 logger.info(    f'latexdiff --encoding=utf8 --append-safecmd=subfile {work_folder_original}/{main_file_original}.tex  {work_folder_modified}/{main_file_modified}.tex --flatten > {work_folder}/merge_diff.tex')
@@ -540,9 +945,12 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
         original_pdf_success = os.path.exists(pj(work_folder_original, f'{main_file_original}.pdf'))
         modified_pdf_success = os.path.exists(pj(work_folder_modified, f'{main_file_modified}.pdf'))
         diff_pdf_success     = os.path.exists(pj(work_folder, f'merge_diff.pdf'))
+        bilingual_pdf_success = os.path.exists(pj(work_folder_modified, f'{bilingual_file}.pdf')) if bilingual_file else False
         results_ += f"原始PDF编译是否成功: {original_pdf_success};"
         results_ += f"转化PDF编译是否成功: {modified_pdf_success};"
         results_ += f"对比PDF编译是否成功: {diff_pdf_success};"
+        if bilingual_file:
+            results_ += f"中英对照PDF编译是否成功: {bilingual_pdf_success};"
         logger.info(f'第{n_fix}编译结束:<br/>{results_}...') # 刷新Gradio前端界面
 
         if diff_pdf_success:
@@ -554,6 +962,10 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
             origin_pdf = pj(work_folder_original, f'{main_file_original}.pdf') # get pdf path
             if os.path.exists(pj(work_folder, '..', 'translation')):
                 shutil.copyfile(result_pdf, pj(work_folder, '..', 'translation', 'translate_zh.pdf'))
+                # 同时复制中英对照PDF（如果存在）
+                if bilingual_pdf_success:
+                    shutil.copyfile(pj(work_folder_modified, f'{bilingual_file}.pdf'),
+                                    pj(work_folder, '..', 'translation', f'{bilingual_file}.pdf'))
             pass  # promote file to web UI
             return True # 成功啦
         else:

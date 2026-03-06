@@ -237,7 +237,7 @@ def LatexTranslateChineseAndRecompilePDF(txt, llm_kwargs, plugin_kwargs):
     success = CompileLatex(main_file_original='merge',
                      main_file_modified='merge_translate_zh', mode='translate_zh',
                      work_folder_original=project_folder, work_folder_modified=project_folder,
-                     work_folder=project_folder)
+                     work_folder=project_folder, bilingual_file='merge_bilingual_zh')
 
     if success:
         logger.info(f"成功啦！结果已保存在 {project_folder}")
