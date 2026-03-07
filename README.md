@@ -150,16 +150,24 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
 ## 项目结构
 
 ```
-standalone/
-├── main.py                     # 主入口、命令行接口、ArXiv下载
+.
+├── main.py                     # 主入口、命令行接口
 ├── config.json                 # 配置文件
+├── config.example.json         # 配置文件示例
 ├── requirements.txt            # 依赖列表
-├── utils.py                    # 配置管理、LLM API调用
-├── crazy_utils.py              # 多线程GPT请求处理
-├── latex_fns/
-│   ├── latex_actions.py        # LaTeX分解转换核心逻辑
-│   ├── latex_toolbox.py        # LaTeX处理工具库
-│   └── latex_pickle_io.py      # 安全对象序列化
+├── README.md                   # 项目说明文档
+├── src/                        # 源代码目录
+│   ├── utils.py                # 配置管理和通用工具
+│   ├── llm_utils.py            # LLM API 调用和多线程请求处理
+│   ├── latex_fns/              # LaTeX 处理模块
+│   │   ├── latex_actions.py    # LaTeX分解转换核心逻辑
+│   │   ├── latex_toolbox.py    # LaTeX处理工具库
+│   │   └── latex_pickle_io.py  # 安全对象序列化
+│   └── main_fns/               # 主要功能模块
+│       ├── arxiv_utils.py      # ArXiv 下载功能
+│       ├── file_manager.py     # 文件管理工具
+│       ├── prompts.py          # 翻译提示词模板
+│       └── workflow.py         # 翻译工作流控制
 └── arxiv_cache/                # 缓存目录
     └── {arxiv_id}/
         ├── extract/            # 解压后的 LaTeX 源码
@@ -167,8 +175,9 @@ standalone/
         │   ├── merge.tex       # 合并后的原始文档
         │   ├── merge_translate_zh.tex  # 翻译后的文档
         │   ├── merge_translate_zh.pdf  # 翻译后的 PDF
+        │   ├── merge_bilingual.pdf     # 双语对照 PDF
         │   └── debug_log.html  # 调试可视化文件
-        └── translation/
+        └── translation/        # 最终输出目录
             ├── translate_zh.pdf   # 最终翻译 PDF
             └── comparison.pdf     # 双语对比 PDF
 ```
@@ -182,10 +191,11 @@ standalone/
 | `merge.tex` | 合并后的原始 LaTeX 文档 |
 | `merge_translate_zh.tex` | 翻译后的中文 LaTeX 文档 |
 | `merge_translate_zh.pdf` | 翻译后的中文 PDF |
-| `merge_diff.pdf` | 双语对比 PDF（并排显示） |
-| `comparison.pdf` | 拼接对比 PDF（原文在上，译文在下） |
+| `merge_bilingual.pdf` | 双语对照 PDF（并排显示，原文在左，译文在右） |
+| `merge_diff.pdf` | 双语对比 PDF（并排显示差异） |
 | `debug_log.html` | 调试文件，可视化标记保留区域（红色）和翻译区域（黑色） |
-| `temp.pkl` | 缓存的翻译结果（用于调试和重新编译） |
+| `temp.pkl` | 缓存的翻译节点数据（用于调试和重新编译） |
+| `merge_result.pkl` | 缓存的翻译结果对象 |
 
 ## 技术细节
 
