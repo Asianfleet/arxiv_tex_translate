@@ -8,7 +8,7 @@ import tarfile
 from functools import partial
 from loguru import logger
 
-from src.latex_fns.latex_actions import LatexDetailedDecompositionAndTransform, CompileLatex
+from src.latex_fns.latex_actions import latex_decomp_and_translate, CompileLatex
 from .file_manager import (
     ensure_run_dirs,
     setup_run_logger,
@@ -23,7 +23,7 @@ from .prompts import switch_prompt
 pj = os.path.join
 
 
-def LatexTranslateChineseAndRecompilePDF(txt, llm_kwargs, plugin_kwargs):
+def Latex_to_CN_PDF(txt, llm_kwargs, plugin_kwargs):
     """
     将LaTeX论文翻译成中文并重新编译为PDF。
 
@@ -97,13 +97,13 @@ def LatexTranslateChineseAndRecompilePDF(txt, llm_kwargs, plugin_kwargs):
 
         if not os.path.exists(project_folder + '/merge_translate_zh.tex'):
             # 同步调用，不再使用 yield
-            LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kwargs, plugin_kwargs,
+            latex_decomp_and_translate(file_manifest, project_folder, llm_kwargs, plugin_kwargs,
                            mode='translate_zh', switch_prompt=_switch_prompt_)
 
         success = CompileLatex(main_file_original='merge',
                          main_file_modified='merge_translate_zh', mode='translate_zh',
                          work_folder_original=project_folder, work_folder_modified=project_folder,
-                         work_folder=project_folder, bilingual_file='merge_bilingual_zh')
+                         work_folder=project_folder, bilingual_file='merge_bilingual')
 
         archive_compiled_pdfs(project_folder, outputs_dir)
 

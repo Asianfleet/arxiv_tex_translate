@@ -13,7 +13,7 @@ from .file_manager import (
     descend_to_extracted_folder_if_exist,
 )
 from .arxiv_utils import arxiv_download
-from .workflow import LatexTranslateChineseAndRecompilePDF
+from .workflow import Latex_to_CN_PDF
 
 __all__ = [
     "switch_prompt",
@@ -25,5 +25,5 @@ __all__ = [
     "setup_run_logger",
     "descend_to_extracted_folder_if_exist",
     "arxiv_download",
-    "LatexTranslateChineseAndRecompilePDF",
+    "Latex_to_CN_PDF",
 ]

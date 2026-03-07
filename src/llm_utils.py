@@ -92,7 +92,7 @@ def can_multi_process(llm) -> bool:
 
     return any(llm.startswith(prefix) for prefix in multi_thread_prefixes)
 
-def request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
+def request_llm_multi_threads(
         inputs_array, inputs_show_user_array, llm_kwargs,
         history_array, sys_prompt_array,
         max_workers=-1,

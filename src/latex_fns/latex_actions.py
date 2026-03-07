@@ -63,6 +63,7 @@ def split_subprocess(txt, project_folder, return_dict):
     for pattern, flags in forbidden_patterns:
         apply_forbidden(pattern, flags)
     text, mask = set_forbidden_text_careful_brace(text, mask, r"\\hl\{(.*?)\}", re.DOTALL)
+    text, mask = set_forbidden_text_careful_brace(text, mask, r"\\hide\{(.*?)\}", re.DOTALL)
     # reverse 操作必须放在最后
     text, mask = reverse_forbidden_text_careful_brace(text, mask, r"\\caption\{(.*?)\}", re.DOTALL, forbid_wrapper=True)
     text, mask = reverse_forbidden_text_careful_brace(text, mask, r"\\abstract\{(.*?)\}", re.DOTALL, forbid_wrapper=True)
@@ -239,11 +240,17 @@ class BilingualTexMerger:
             (r"\\begin\{equation\*\}(.*?)\\end\{equation\*\}", re.DOTALL),
             ([r"\$\$([^$]+)\$\$", r"\\\[.*?\\\]"], re.DOTALL),
             ([r"\\bibliography\{(.*?)\}", r"\\bibliographystyle\{(.*?)\}", r"\\appendix", r"\\tableofcontents", r"\\clearpage", r"\\newpage"], 0),
-            ([r"\\vspace\{(.*?)\}", r"\\hspace\{(.*?)\}", r"\\label\{(.*?)\}", r"\\begin\{(.*?)\}", r"\\end\{(.*?)\}", r"\\item "], 0),
+            # 匹配 \begin{...}[...]? 和 \end{...}，包括带可选参数的环境声明
+            (r"\\begin\{[^}]+\}(\[[^\]]*\])?", 0),
+            (r"\\end\{[^}]+\}", 0),
+            ([r"\\vspace\{(.*?)\}", r"\\hspace\{(.*?)\}", r"\\label\{(.*?)\}", r"\\item "], 0),
         ]
         for pattern, flags in forbidden_patterns:
             apply_forbidden(pattern, flags)
 
+        text, mask = set_forbidden_text_careful_brace(
+            text, mask, r"\\hide\{(.*?)\}", re.DOTALL
+        )
         text, mask = set_forbidden_text_careful_brace(
             text, mask, r"\\caption\{(.*?)\}", re.DOTALL
         )
@@ -363,6 +370,23 @@ class BilingualTexMerger:
             for pattern in structural_patterns
         )
 
+    @staticmethod
+    def _is_latex_only_command(text):
+        """
+        判断段落是否只包含 LaTeX 命令（无实际文本内容）。
+
+        例如：\begin{itemize}[leftmargin=*] 或 \end{itemize}
+        这类段落不应该被包裹进颜色组。
+        """
+        stripped = text.strip()
+        # 检查是否是环境声明（带可选参数）
+        if re.search(r"^\\begin\{[^}]+\}(\[[^\]]*\])?$", stripped):
+            return True
+        # 检查是否是环境结束
+        if re.search(r"^\\end\{[^}]+\}$", stripped):
+            return True
+        return False
+
     @classmethod
     def _render_bilingual_segment(cls, en_text, zh_text, zh_color):
         """
@@ -394,10 +418,15 @@ class BilingualTexMerger:
             for en_para, zh_para in zip(en_paragraphs, zh_groups):
                 rendered.append(en_para)
                 if zh_para:
-                    rendered.append("")
-                    rendered.append(f"\\begingroup\\color{{{zh_color}}}")
-                    rendered.append(zh_para)
-                    rendered.append("\\par\\endgroup")
+                    # 如果英文段落是纯 LaTeX 命令（如 \begin{itemize}[...]），
+                    # 则不包裹颜色组，直接使用中文章落内容
+                    if cls._is_latex_only_command(en_para):
+                        rendered.append(zh_para)
+                    else:
+                        rendered.append("")
+                        rendered.append(f"\\begingroup\\color{{{zh_color}}}")
+                        rendered.append(zh_para)
+                        rendered.append("\\par\\endgroup")
                 rendered.append("")
             return "\n\n".join(rendered).strip() + "\n\n"
 
@@ -462,7 +491,7 @@ class BilingualTexMerger:
         if output_tex_path is None:
             output_tex_path = pj(
                 os.path.dirname(os.path.abspath(english_tex_path)),
-                "merge_bilingual_zh.tex",
+                "merge_bilingual.tex",
             )
 
         with open(output_tex_path, "w", encoding="utf-8", errors="replace") as f:
@@ -481,11 +510,11 @@ class LatexPaperSplit():
     def __init__(self) -> None:
         """初始化LatexPaperSplit实例，设置警告信息和默认标题摘要。"""
         self.nodes = None
-        self.msg = "*{\\scriptsize\\textbf{警告：该PDF由GPT-Academic开源项目调用大语言模型+Latex翻译插件一键生成，" + \
+        self.msg = "*{\\small\\textbf{警告：该 PDF 由 AI 翻译生成，" + \
             "版权归原文作者所有。翻译内容可靠性无保障，请仔细鉴别并以原文为准。" + \
-            "项目Github地址 \\url{https://github.com/binary-husky/gpt_academic/}。"
+            "项目 Github 地址 \\url{https://github.com/Asianfleet/arxiv_tex_translate.git}。"
         # 请您不要删除或修改这行警告，除非您是论文的原作者（如果您是论文原作者，欢迎加README中的QQ联系开发者）
-        self.msg_declare = "为了防止大语言模型的意外谬误产生扩散影响，禁止移除或修改此警告。}}\\\\"
+        self.msg_declare = "为了防止大语言模型的意外谬误产生扩散影响，禁止移除或修改此警告。}}\\newline\\\\"
         self.title = "unknown"
         self.abstract = "unknown"
 
@@ -645,7 +674,7 @@ class LatexPaperFileGroup():
         return manifest
 
 
-def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kwargs, plugin_kwargs, mode='proofread', switch_prompt=None):
+def latex_decomp_and_translate(file_manifest, project_folder, llm_kwargs, plugin_kwargs, mode='proofread', switch_prompt=None):
     """
     对LaTeX文件进行精细分解和转换处理。
 
@@ -669,7 +698,7 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
         生成的合并tex文件路径
     """
     import time
-    from ..llm_utils import request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency
+    from ..llm_utils import request_llm_multi_threads
 
     #  <-------- 寻找主tex文件 ---------->
     maintex = find_main_tex_file(file_manifest)
@@ -725,7 +754,7 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
         #     paper_meta_max_len = 888
         #     history_array = [[ paper_meta[:paper_meta_max_len] + '...',  "Understand, what should I do?"] for _ in range(n_split)]
 
-        gpt_response_collection = request_gpt_model_multi_threads_with_very_awesome_ui_and_high_efficiency(
+        gpt_response_collection = request_llm_multi_threads(
             inputs_array=inputs_array,
             inputs_show_user_array=inputs_show_user_array,
             llm_kwargs=llm_kwargs,
@@ -735,7 +764,11 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
 
         #  <-------- 文本碎片重组为完整的tex片段 ---------->
         pfg.sp_file_result = []
-        for i_say, gpt_say, orig_content in zip(gpt_response_collection[0::2], gpt_response_collection[1::2], pfg.sp_file_contents):
+        for i_say, gpt_say, orig_content in zip(
+            gpt_response_collection[0::2], 
+            gpt_response_collection[1::2], 
+            pfg.sp_file_contents
+        ):
             pfg.sp_file_result.append(gpt_say)
         pfg.merge_result()
 
@@ -750,7 +783,7 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
     objdump((lps, pfg.file_result, mode, msg), file=pj(project_folder,'merge_result.pkl'))
 
     with open(project_folder + f'/merge_{mode}.tex', 'w', encoding='utf-8', errors='replace') as f:
-        if mode != 'translate_zh' or "binary" in final_tex: f.write(final_tex)
+        f.write(final_tex)
 
 
     #  <-------- 整理结果, 退出 ---------->
@@ -763,12 +796,12 @@ def LatexDetailedDecompositionAndTransform(file_manifest, project_folder, llm_kw
                 english_tex_path=project_folder + '/merge.tex',
                 chinese_tex_path=project_folder + '/merge_translate_zh.tex',
             )
-            logger.info("已生成中英对照tex文件: merge_bilingual_zh.tex")
+            logger.info("已生成中英对照tex文件: merge_bilingual.tex")
         except Exception as e:
             logger.warning(f"生成中英对照文件时出错: {e}")
 
     #  <-------- 返回 ---------->
-    return [project_folder + f'/merge_{mode}.tex', project_folder + f'/merge_bilingual_zh.tex']
+    return [project_folder + f'/merge_{mode}.tex', project_folder + f'/merge_bilingual.tex']
 
 
 def remove_buggy_lines(file_path, log_path, tex_name, tex_name_pure, n_fix, work_folder_modified, fixed_line=[]):
@@ -912,14 +945,49 @@ def CompileLatex(main_file_original, main_file_modified, work_folder_original, w
             if bilingual_file and os.path.exists(pj(work_folder_modified, f'{bilingual_file}.tex')):
                 logger.info(f'尝试第 {n_fix}/{max_try} 次编译, 编译中英对照PDF ...')
                 may_exist_bbl_bilingual = pj(work_folder_modified, f'{bilingual_file}.bbl')
-                if not os.path.exists(may_exist_bbl_bilingual) and os.path.exists(pj(work_folder_modified, 'merge.bbl')):
-                    shutil.copyfile(pj(work_folder_modified, 'merge.bbl'), may_exist_bbl_bilingual)
+                merge_bbl_path = pj(work_folder_modified, 'merge.bbl')
+
+                # 检查并修复 bbl 文件（支持空文件覆盖）
+                def get_file_size(path):
+                    return os.path.getsize(path) if os.path.exists(path) else 0
+
+                bilingual_bbl_size = get_file_size(may_exist_bbl_bilingual)
+                merge_bbl_size = get_file_size(merge_bbl_path)
+
+                if merge_bbl_size > 0:
+                    if bilingual_bbl_size == 0:
+                        try:
+                            shutil.copyfile(merge_bbl_path, may_exist_bbl_bilingual)
+                            logger.info(f'已从 merge.bbl ({merge_bbl_size} bytes) 复制到 {bilingual_file}.bbl')
+                        except Exception as e:
+                            logger.warning(f'复制 bbl 文件时出错: {e}')
+                    else:
+                        logger.info(f'{bilingual_file}.bbl 已存在且非空 ({bilingual_bbl_size} bytes)，跳过复制')
+                else:
+                    logger.warning(f'merge.bbl 不存在或为空 ({merge_bbl_size} bytes)，无法为双语文件提供引用数据')
+
+                # 首次编译
                 bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
-                if bilingual_ok and not os.path.exists(may_exist_bbl_bilingual):
-                    bilingual_ok = compile_latex_with_timeout(f'bibtex  {bilingual_file}.aux', work_folder_modified)
+
+                # 检查 bbl 状态，必要时运行 bibtex
+                current_bbl_size = get_file_size(may_exist_bbl_bilingual)
+                if bilingual_ok and current_bbl_size == 0:
+                    logger.info(f'{bilingual_file}.bbl 为空，尝试运行 bibtex 生成引用...')
+                    aux_path = pj(work_folder_modified, f'{bilingual_file}.aux')
+                    if os.path.exists(aux_path):
+                        bibtex_ok = compile_latex_with_timeout(f'bibtex  {bilingual_file}.aux', work_folder_modified)
+                        if not bibtex_ok:
+                            logger.warning(f'bibtex 执行失败，引用可能显示为 ???')
+                    else:
+                        logger.warning(f'找不到 {bilingual_file}.aux 文件，无法运行 bibtex')
+
+                # 后续编译以解析交叉引用
                 if bilingual_ok:
-                    bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
-                    bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
+                    for compile_round in range(2):
+                        bilingual_ok = compile_latex_with_timeout(get_compile_command(compiler, bilingual_file), work_folder_modified)
+                        if not bilingual_ok:
+                            logger.warning(f'中英对照 PDF 第 {compile_round + 2} 次编译失败')
+                            break
 
             if mode!='translate_zh':
                 logger.info(f'尝试第 {n_fix}/{max_try} 次编译, 使用latexdiff生成论文转化前后对比 ...') # 刷新Gradio前端界面

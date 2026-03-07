@@ -8,7 +8,7 @@ import sys
 from loguru import logger
 
 from src.utils import get_conf, load_config, CONFIG
-from src.main_fns import LatexTranslateChineseAndRecompilePDF
+from src.main_fns import Latex_to_CN_PDF
 
 
 def main():
@@ -46,7 +46,7 @@ def main():
         "advanced_arg": advanced_arg
     }
 
-    LatexTranslateChineseAndRecompilePDF(arxiv_id, llm_kwargs, plugin_kwargs)
+    Latex_to_CN_PDF(arxiv_id, llm_kwargs, plugin_kwargs)
 
 
 if __name__ == "__main__":

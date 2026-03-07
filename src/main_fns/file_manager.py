@@ -93,7 +93,7 @@ def archive_compiled_pdfs(work_folder, outputs_dir):
     """
     if not work_folder or not outputs_dir:
         return
-    for pdf_name in ['merge.pdf', 'merge_translate_zh.pdf', 'merge_bilingual_zh.pdf']:
+    for pdf_name in ['merge.pdf', 'merge_translate_zh.pdf', 'merge_bilingual.pdf']:
         src = pj(work_folder, pdf_name)
         if os.path.exists(src):
             shutil.copy2(src, pj(outputs_dir, pdf_name))
