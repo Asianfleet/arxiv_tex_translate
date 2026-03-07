@@ -33,7 +33,7 @@ def load_config(config_path="config.json"):
         "arxiv": "",
         "model": "qwen-plus",
         "advanced_arg": "",
-        "api_key": "sk-85a045810ddb487fad347a9d276d2c83",
+        "api_key": "",
         "llm_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "arxiv_cache_dir": "arxiv_cache",
         "default_worker_num": 8,
