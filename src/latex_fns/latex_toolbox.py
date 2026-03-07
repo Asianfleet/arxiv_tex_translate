@@ -820,6 +820,14 @@ def compile_latex_with_timeout(command, cwd, timeout=60):
         stdout, stderr = process.communicate()
         logger.error("Process timed out (compile_latex_with_timeout)!")
         return False
+    # stdout_text = stdout.decode('utf-8', errors='replace').strip()
+    # stderr_text = stderr.decode('utf-8', errors='replace').strip()
+    # if stdout_text:
+    #     logger.info(f"[compile stdout] {command}\n{stdout_text}")
+    # if stderr_text:
+    #     logger.warning(f"[compile stderr] {command}\n{stderr_text}")
+    # if process.returncode != 0:
+    #     logger.warning(f"LaTeX命令退出码非0: {process.returncode}，命令: {command}")
     return True
 
 
