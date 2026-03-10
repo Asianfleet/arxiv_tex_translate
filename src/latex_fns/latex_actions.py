@@ -561,24 +561,16 @@ class BilingualTexMerger:
         en_paragraphs = cls._split_tex_paragraphs(en_text)
         zh_paragraphs = cls._split_tex_paragraphs(zh_text)
 
+        # 只有当英文和中文段落数量完全一致时，才进行逐段交错输出
+        # 否则退化为整块英文后跟整块中文，避免段落错位
         if (
-            len(en_paragraphs) > 1
-            and zh_paragraphs
+            len(en_paragraphs) == len(zh_paragraphs)
+            and len(en_paragraphs) > 1
             and cls._can_paragraph_split_segment(en_text)
             and cls._can_paragraph_split_segment(zh_text)
         ):
-            zh_groups = []
-            zh_count = len(zh_paragraphs)
-            en_count = len(en_paragraphs)
-            for i in range(en_count):
-                start = round(i * zh_count / en_count)
-                end = round((i + 1) * zh_count / en_count)
-                if end <= start:
-                    end = min(start + 1, zh_count)
-                zh_groups.append("\n\n".join(zh_paragraphs[start:end]).strip())
-
             rendered = []
-            for en_para, zh_para in zip(en_paragraphs, zh_groups):
+            for en_para, zh_para in zip(en_paragraphs, zh_paragraphs):
                 rendered.append(en_para)
                 if zh_para:
                     # 如果英文段落是纯 LaTeX 命令（如 \begin{itemize}[...]），
