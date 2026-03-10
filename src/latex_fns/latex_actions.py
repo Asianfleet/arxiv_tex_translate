@@ -372,7 +372,7 @@ class BilingualTexMerger:
 
     @staticmethod
     def _is_latex_only_command(text):
-        """
+        r"""
         判断段落是否只包含 LaTeX 命令（无实际文本内容）。
 
         例如：\begin{itemize}[leftmargin=*] 或 \end{itemize}
@@ -386,6 +386,169 @@ class BilingualTexMerger:
         if re.search(r"^\\end\{[^}]+\}$", stripped):
             return True
         return False
+
+    @staticmethod
+    def _skip_whitespace(text, index):
+        while index < len(text) and text[index].isspace():
+            index += 1
+        return index
+
+    @staticmethod
+    def _parse_balanced_block(text, index, open_char, close_char):
+        """从 index 处解析一个成对括号块，返回 (start, end, inner_text)。"""
+        if index >= len(text) or text[index] != open_char:
+            return None
+        start = index
+        depth = 0
+        i = index
+        while i < len(text):
+            ch = text[i]
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == open_char:
+                depth += 1
+            elif ch == close_char:
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    return start, end, text[start + 1 : i]
+            i += 1
+        return None
+
+    @classmethod
+    def _extract_caption_entries(cls, tex_content):
+        r"""
+        提取 caption 命令信息。
+
+        支持:
+        - \caption{...}
+        - \caption[...]{...}
+        - \captionof{type}{...}
+        - \captionof{type}[...]{...}
+        """
+        entries = []
+        i = 0
+        while i < len(tex_content):
+            if tex_content[i] != "\\":
+                i += 1
+                continue
+
+            command = None
+            if tex_content.startswith("\\captionof", i):
+                command = "captionof"
+                j = i + len("\\captionof")
+            elif tex_content.startswith("\\caption", i):
+                command = "caption"
+                j = i + len("\\caption")
+            else:
+                i += 1
+                continue
+
+            if j < len(tex_content) and tex_content[j] == "*":
+                j += 1
+            j = cls._skip_whitespace(tex_content, j)
+
+            if command == "captionof":
+                type_block = cls._parse_balanced_block(tex_content, j, "{", "}")
+                if not type_block:
+                    i += 1
+                    continue
+                _, type_end, _ = type_block
+                j = cls._skip_whitespace(tex_content, type_end)
+                opt_block = cls._parse_balanced_block(tex_content, j, "[", "]")
+                if opt_block:
+                    _, opt_end, _ = opt_block
+                    j = cls._skip_whitespace(tex_content, opt_end)
+
+            elif command == "caption":
+                opt_block = cls._parse_balanced_block(tex_content, j, "[", "]")
+                if opt_block:
+                    _, opt_end, _ = opt_block
+                    j = cls._skip_whitespace(tex_content, opt_end)
+
+            caption_block = cls._parse_balanced_block(tex_content, j, "{", "}")
+            if not caption_block:
+                i += 1
+                continue
+            cap_start, cap_end, cap_inner = caption_block
+            entry_end = cap_end
+
+            entries.append(
+                {
+                    "start": i,
+                    "end": entry_end,
+                    "prefix": tex_content[i : cap_start + 1],
+                    "suffix": tex_content[cap_end - 1 : entry_end],
+                    "caption": cap_inner,
+                }
+            )
+            i = entry_end
+        return entries
+
+    @staticmethod
+    def _normalize_caption_text(text):
+        return re.sub(r"\s+", " ", text).strip()
+
+    @classmethod
+    def _merge_bilingual_captions(
+        cls, english_tex, chinese_tex, merged_tex, zh_color="bilingualzhcolor"
+    ):
+        r"""把输出文档中的 caption 合并成 `英文 \\ {\color{灰色}中文}`。"""
+        en_entries = cls._extract_caption_entries(english_tex)
+        zh_entries = cls._extract_caption_entries(chinese_tex)
+        out_entries = cls._extract_caption_entries(merged_tex)
+
+        if not en_entries or not zh_entries or not out_entries:
+            return merged_tex
+
+        pair_count = min(len(en_entries), len(zh_entries), len(out_entries))
+        if pair_count == 0:
+            return merged_tex
+
+        if len(en_entries) != len(zh_entries):
+            logger.warning(
+                "中英文 caption 数量不一致，将按最小数量合并。"
+                f" 英文={len(en_entries)} 中文={len(zh_entries)}"
+            )
+        if len(out_entries) != len(zh_entries):
+            logger.warning(
+                "输出文档 caption 数量与中文源不一致，将按最小数量合并。"
+                f" 输出={len(out_entries)} 中文={len(zh_entries)}"
+            )
+
+        pieces = []
+        cursor = 0
+        for idx, entry in enumerate(out_entries):
+            pieces.append(merged_tex[cursor : entry["start"]])
+            if idx < pair_count:
+                en_text = cls._normalize_caption_text(en_entries[idx]["caption"])
+                zh_text = cls._normalize_caption_text(zh_entries[idx]["caption"])
+                if en_text and zh_text:
+                    merged_caption = (
+                        f"{en_text} \\quad \\quad "
+                        + "{"
+                        + f"\\color{{{zh_color}}}"
+                        + "[翻译] "
+                        + zh_text
+                        + "}"
+                    )
+                else:
+                    merged_caption = (
+                        "{"
+                        + f"\\color{{{zh_color}}}"
+                        + zh_text
+                        + "}"
+                        if zh_text
+                        else en_text
+                    )
+                replacement = entry["prefix"] + merged_caption + entry["suffix"]
+            else:
+                replacement = merged_tex[entry["start"] : entry["end"]]
+            pieces.append(replacement)
+            cursor = entry["end"]
+        pieces.append(merged_tex[cursor:])
+        return "".join(pieces)
 
     @classmethod
     def _render_bilingual_segment(cls, en_text, zh_text, zh_color):
@@ -486,6 +649,12 @@ class BilingualTexMerger:
             segment_index += 1
 
         merged_tex = "".join(result_parts)
+        merged_tex = cls._merge_bilingual_captions(
+            english_tex=english_tex,
+            chinese_tex=chinese_tex,
+            merged_tex=merged_tex,
+            zh_color=zh_color,
+        )
         merged_tex = cls.ensure_bilingual_preamble(merged_tex, color_name=zh_color)
 
         if output_tex_path is None:
