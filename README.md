@@ -46,8 +46,8 @@
 1. **克隆仓库**
 
 ```bash
-git clone <repository-url>
-cd standalone
+git clone https://github.com/Asianfleet/arxiv_tex_translate.git
+cd arxiv_tex_translate
 ```
 
 2. **安装依赖**
