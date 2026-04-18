@@ -787,7 +787,7 @@ class LatexPaperFileGroup():
         self.sp_file_index = []
         self.sp_file_tag = []
         # count_token
-        from ..utils import model_info
+        from ..llm.model_info import model_info
         enc = model_info["gpt-3.5-turbo"]['tokenizer']
         def get_token_num(txt): return len(enc.encode(txt, disallowed_special=()))
         self.get_token_num = get_token_num

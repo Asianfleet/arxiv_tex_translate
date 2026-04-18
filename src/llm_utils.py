@@ -5,8 +5,14 @@ import numpy as np
 from loguru import logger
 from concurrent.futures import ThreadPoolExecutor
 
-from .utils import get_conf, trimmed_format_exc, get_max_token
-from .utils import predict_no_ui_long_connection, model_info
+from .llm.batching import can_multi_process as _can_multi_process
+from .llm.model_info import get_max_token_for_model, model_info
+from .llm.streaming import (
+    get_reduce_token_percent,
+    predict_no_ui_long_connection,
+    trimmed_format_exc,
+)
+from .llm.batching import translate_segments
 
 def input_clipping(inputs, history, max_token_limit, return_clip_flags=False):
     """
@@ -80,17 +86,7 @@ def can_multi_process(llm) -> bool:
     Returns:
         是否支持多线程
     """
-    # 优先从 model_info 获取配置
-    if llm in model_info and 'can_multi_thread' in model_info[llm]:
-        return model_info[llm]['can_multi_thread']
-
-    # 支持多线程的模型前缀集合
-    multi_thread_prefixes = {
-        'gpt-', 'chatgpt-', 'api2d-', 'azure-',
-        'spark', 'zhipuai', 'glm-', 'qwen'
-    }
-
-    return any(llm.startswith(prefix) for prefix in multi_thread_prefixes)
+    return _can_multi_process(llm)
 
 def request_llm_multi_threads(
         inputs_array, inputs_show_user_array, llm_kwargs,
@@ -120,9 +116,12 @@ def request_llm_multi_threads(
     """
 
     if max_workers == -1:
-        try: max_workers = get_conf('DEFAULT_WORKER_NUM')
-        except: max_workers = 8
-        if max_workers <= 0: max_workers = 3
+        try:
+            max_workers = int(llm_kwargs.get("default_worker_num", 8))
+        except Exception:
+            max_workers = 8
+        if max_workers <= 0:
+            max_workers = 3
     if not can_multi_process(llm_kwargs['llm_model']):
         max_workers = 1
 
@@ -153,9 +152,8 @@ def request_llm_multi_threads(
             except ConnectionAbortedError as token_exceeded_error:
                 if handle_token_exceed:
                     exceeded_cnt += 1
-                    from utils import get_reduce_token_percent
                     p_ratio, n_exceed = get_reduce_token_percent(str(token_exceeded_error))
-                    MAX_TOKEN = get_max_token(llm_kwargs)
+                    MAX_TOKEN = get_max_token_for_model(llm_kwargs.get("llm_model"))
                     EXCEED_ALLO = 512 + 512 * exceeded_cnt
                     inputs, history = input_clipping(inputs, history, max_token_limit=MAX_TOKEN-EXCEED_ALLO)
                     gpt_say += f'[Local Message] 警告，文本过长将进行截断，Token溢出数：{n_exceed}。\n\n'

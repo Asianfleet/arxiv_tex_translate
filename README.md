@@ -7,7 +7,7 @@
 
 ## 核心特性
 
-- **智能 LaTeX 分解**：使用二进制掩码和链表结构精准识别保留区域（公式、图表、命令）和翻译区域（正文、摘要、标题）
+- **智能 LaTeX 分段**：基于 `pylatexenc` 的语法遍历与回退扫描相结合，精准识别公式、图表、命令与可翻译文本
 - **多线程 GPT 翻译**：支持并发请求，大幅提升翻译效率
 - **自动 PDF 编译**：集成 LaTeX 编译流程，自动处理交叉引用和参考文献
 - **错误自动修复**：编译失败时自动识别错误行并回滚修复
@@ -16,23 +16,19 @@
 
 ## 工作原理
 
-### 精细分解流程
+### 当前工作流
 
 ```
-原始 LaTeX → 掩码标记 → 链表转换 → 后处理 → GPT 翻译 → 重组 → PDF 编译
+原始项目 / ArXiv 源码 → 合并主文档 → 语法分段 → LLM 翻译 → 渲染修复 → 双语生成 → PDF 编译
 ```
 
-1. **掩码初始化**：默认所有内容为 `TRANSFORM`（需翻译）
-2. **多层防护标记**：逐步标记保留区域
-   - 文档头部（导言区）
-   - 数学公式环境（`equation`, `align`, `$$` 等）
-   - 图表环境（`figure`, `table` 等）
-   - LaTeX 命令（`\section`, `\cite`, `\ref` 等）
-3. **反向开放**：精准开放需要翻译的区域（`\caption{}` 内部、`abstract` 环境等）
-4. **链表转换**：合并同类节点，生成处理片段
-5. **GPT 翻译**：多线程并发翻译文本片段
-6. **重组修复**：合并翻译结果，修复常见 LaTeX 错误
-7. **PDF 编译**：自动编译并生成最终 PDF
+1. **项目准备**：本地项目直接复制到运行目录；ArXiv 输入先下载源码并解压到缓存目录
+2. **主文档合并**：递归展开 `\input` / `\include`，生成统一的 `merge.tex`
+3. **语法分段**：识别正文、摘要、标题、图注、行内公式边界等，构建可翻译片段计划
+4. **批量翻译**：按模型并发能力控制线程数，向 OpenAI 兼容接口发起批量请求
+5. **渲染修复**：回填译文、注入中文前言，修正常见空格和转义问题
+6. **双语输出**：生成 `merge_bilingual.tex`，并同步兼容目录中的 PDF 文件
+7. **PDF 编译**：自动编译中文稿与双语稿
 
 ## 安装
 
@@ -58,13 +54,13 @@ pip install -r requirements.txt
 
 3. **配置 API 密钥**
 
-复制 `config.json.example` 为 `config.json` 并填写配置：
+复制 `config.example.json` 为 `config.json` 并填写配置：
 
 ```json
 {
     "arxiv": "",
     "model": "qwen-plus",
-    "api_key": "your-api-key-here",
+    "api_key_env": "DASHSCOPE_API_KEY",
     "llm_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "arxiv_cache_dir": "arxiv_cache",
     "default_worker_num": 8,
@@ -74,6 +70,8 @@ pip install -r requirements.txt
 }
 ```
 
+真实 API Key 不再写入 `config.json`。请把密钥放入你自定义的环境变量中，并在配置文件里用 `api_key_env` 指向该变量名。
+
 **支持的模型**：
 - OpenAI GPT 系列（`gpt-3.5-turbo`, `gpt-4` 等）
 - 通义千问（`qwen-plus`, `qwen-max` 等）
@@ -82,7 +80,7 @@ pip install -r requirements.txt
 **环境变量方式**（优先级高于配置文件）：
 
 ```bash
-export OPENAI_API_KEY="your-api-key"
+export DASHSCOPE_API_KEY="your-api-key"
 export OPENAI_BASE_URL="https://api.openai.com/v1"
 ```
 
@@ -138,7 +136,7 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
 |------|------|--------|
 | `arxiv` | ArXiv ID 或链接 | `""` |
 | `model` | LLM 模型名称 | `"qwen-plus"` |
-| `api_key` | API 密钥 | `""` |
+| `api_key_env` | 保存真实 API Key 的环境变量名 | `""` |
 | `llm_url` | API 端点 URL | `"https://dashscope.aliyuncs.com/compatible-mode/v1"` |
 | `advanced_arg` | 额外翻译提示词 | `""` |
 | `arxiv_cache_dir` | 缓存目录 | `"arxiv_cache"` |
@@ -157,17 +155,22 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
 ├── requirements.txt            # 依赖列表
 ├── README.md                   # 项目说明文档
 ├── src/                        # 源代码目录
-│   ├── utils.py                # 配置管理和通用工具
-│   ├── llm_utils.py            # LLM API 调用和多线程请求处理
-│   ├── latex_fns/              # LaTeX 处理模块
+│   ├── workflow.py             # 核心翻译工作流入口
+│   ├── config/                 # 配置模型与加载器
+│   ├── latex/                  # LaTeX 合并、分段、渲染、编译模块
+│   ├── llm/                    # OpenAI 兼容客户端、批量翻译与流式能力
+│   ├── project/                # 项目缓存、输出与 ArXiv 辅助模块
+│   ├── utils.py                # 旧接口兼容配置桥
+│   ├── llm_utils.py            # 旧 LLM 接口兼容桥
+│   ├── latex_fns/              # 旧 LaTeX 处理模块（兼容保留）
 │   │   ├── latex_actions.py    # LaTeX分解转换核心逻辑
 │   │   ├── latex_toolbox.py    # LaTeX处理工具库
 │   │   └── latex_pickle_io.py  # 安全对象序列化
-│   └── main_fns/               # 主要功能模块
-│       ├── arxiv_utils.py      # ArXiv 下载功能
-│       ├── file_manager.py     # 文件管理工具
+│   └── main_fns/               # 旧入口兼容包装
+│       ├── arxiv_utils.py      # ArXiv 下载兼容入口
+│       ├── file_manager.py     # 文件管理兼容入口
 │       ├── prompts.py          # 翻译提示词模板
-│       └── workflow.py         # 翻译工作流控制
+│       └── workflow.py         # 旧工作流兼容入口
 └── arxiv_cache/                # 缓存目录
     └── {arxiv_id}/
         ├── extract/            # 解压后的 LaTeX 源码
@@ -177,25 +180,27 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
         │   ├── merge_translate_zh.pdf  # 翻译后的 PDF
         │   ├── merge_bilingual.pdf     # 双语对照 PDF
         │   └── debug_log.html  # 调试可视化文件
-        └── translation/        # 最终输出目录
-            ├── translate_zh.pdf   # 最终翻译 PDF
-            └── comparison.pdf     # 双语对比 PDF
+        ├── outputs/            # 新工作流输出归档目录
+        │   ├── merge_translate_zh.pdf
+        │   └── merge_bilingual.pdf
+        └── translation/        # 旧兼容输出目录
+            ├── translate_zh.pdf
+            └── merge_bilingual.pdf
 ```
+
+当前核心路径已经迁移到 `src/workflow.py`、`src/latex/`、`src/llm/` 与 `src/project/`；旧 `src.main_fns.workflow.Latex_to_CN_PDF`、`src.utils`、`src.llm_utils` 仅保留为兼容包装器。
 
 ## 输出文件说明
 
-翻译完成后，在 `arxiv_cache/{arxiv_id}/workfolder/` 目录下会生成以下文件：
+翻译完成后，arXiv 任务会在 `arxiv_cache/{arxiv_id}/workfolder/` 生成中间产物，并在 `arxiv_cache/{arxiv_id}/outputs/` 与旧兼容目录 `arxiv_cache/{arxiv_id}/translation/` 同步 PDF；本地项目则使用 `arxiv_cache/local_cache/<timestamp>/workfolder/`。
 
 | 文件 | 说明 |
 |------|------|
 | `merge.tex` | 合并后的原始 LaTeX 文档 |
 | `merge_translate_zh.tex` | 翻译后的中文 LaTeX 文档 |
 | `merge_translate_zh.pdf` | 翻译后的中文 PDF |
-| `merge_bilingual.pdf` | 双语对照 PDF（并排显示，原文在左，译文在右） |
-| `merge_diff.pdf` | 双语对比 PDF（并排显示差异） |
+| `merge_bilingual.pdf` | 双语对照 PDF |
 | `debug_log.html` | 调试文件，可视化标记保留区域（红色）和翻译区域（黑色） |
-| `temp.pkl` | 缓存的翻译节点数据（用于调试和重新编译） |
-| `merge_result.pkl` | 缓存的翻译结果对象 |
 
 ## 技术细节
 

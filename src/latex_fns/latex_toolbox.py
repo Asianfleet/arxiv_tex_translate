@@ -3,6 +3,14 @@ import re
 import shutil
 import numpy as np
 from loguru import logger
+from src.latex.merge import (
+    DEFAULT_ABSTRACT_BLOCK as _DEFAULT_ABSTRACT_BLOCK,
+    find_main_tex_file as _find_main_tex_file,
+    find_tex_file_ignore_case as _find_tex_file_ignore_case,
+    insert_abstract as _insert_abstract,
+    merge_tex_files as _merge_tex_files,
+    remove_comments as _remove_comments,
+)
 
 PRESERVE = 0
 TRANSFORM = 1
@@ -389,48 +397,7 @@ def find_main_tex_file(file_manifest):
     Raises:
         RuntimeError: 如果找不到包含documentclass的文件
     """
-    candidates = []
-    for texf in file_manifest:
-        if os.path.basename(texf).startswith("merge"):
-            continue
-        with open(texf, "r", encoding="utf8", errors="ignore") as f:
-            file_content = f.read()
-        if r"\documentclass" in file_content:
-            candidates.append(texf)
-        else:
-            continue
-
-    if len(candidates) == 0:
-        raise RuntimeError("无法找到一个主Tex文件（包含documentclass关键字）")
-    elif len(candidates) == 1:
-        return candidates[0]
-    else:  # if len(candidates) >= 2 通过一些Latex模板中常见（但通常不会出现在正文）的单词，对不同latex源文件扣分，取评分最高者返回
-        candidates_score = []
-        # 给出一些判定模板文档的词作为扣分项
-        unexpected_words = [
-            "\\LaTeX",
-            "manuscript",
-            "Guidelines",
-            "font",
-            "citations",
-            "rejected",
-            "blind review",
-            "reviewers",
-        ]
-        expected_words = ["\\input", "\\ref", "\\cite"]
-        for texf in candidates:
-            candidates_score.append(0)
-            with open(texf, "r", encoding="utf8", errors="ignore") as f:
-                file_content = f.read()
-                file_content = rm_comments(file_content)
-            for uw in unexpected_words:
-                if uw in file_content:
-                    candidates_score[-1] -= 1
-            for uw in expected_words:
-                if uw in file_content:
-                    candidates_score[-1] += 1
-        select = np.argmax(candidates_score)  # 取评分最高者返回
-        return candidates[select]
+    return str(_find_main_tex_file(file_manifest))
 
 
 def rm_comments(main_file):
@@ -446,17 +413,7 @@ def rm_comments(main_file):
     Returns:
         移除注释后的内容
     """
-    new_file_remove_comment_lines = []
-    for l in main_file.splitlines():
-        # 删除整行的空注释
-        if l.lstrip().startswith("%"):
-            pass
-        else:
-            new_file_remove_comment_lines.append(l)
-    main_file = "\n".join(new_file_remove_comment_lines)
-    # main_file = re.sub(r"\\include{(.*?)}", r"\\input{\1}", main_file)  # 将 \include 命令转换为 \input 命令
-    main_file = re.sub(r"(?<!\\)%.*", "", main_file)  # 使用正则表达式查找半行注释, 并替换为空字符串
-    return main_file
+    return _remove_comments(main_file)
 
 
 def find_tex_file_ignore_case(fp):
@@ -474,30 +431,8 @@ def find_tex_file_ignore_case(fp):
     Returns:
         找到的文件路径，或None
     """
-    dir_name = os.path.dirname(fp)
-    base_name = os.path.basename(fp)
-    # 如果输入的文件路径是正确的
-    if os.path.isfile(pj(dir_name, base_name)):
-        return pj(dir_name, base_name)
-    # 如果不正确，试着加上.tex后缀试试
-    if not base_name.endswith(".tex"):
-        base_name += ".tex"
-    if os.path.isfile(pj(dir_name, base_name)):
-        return pj(dir_name, base_name)
-    # 如果还找不到，解除大小写限制，再试一次
-    import glob
-
-    for f in glob.glob(dir_name + "/*.tex"):
-        base_name_s = os.path.basename(fp)
-        base_name_f = os.path.basename(f)
-        if base_name_s.lower() == base_name_f.lower():
-            return f
-        # 试着加上.tex后缀试试
-        if not base_name_s.endswith(".tex"):
-            base_name_s += ".tex"
-        if base_name_s.lower() == base_name_f.lower():
-            return f
-    return None
+    resolved = _find_tex_file_ignore_case(fp)
+    return str(resolved) if resolved is not None else None
 
 
 def merge_tex_files_(project_foler, main_file):
@@ -513,22 +448,7 @@ def merge_tex_files_(project_foler, main_file):
     Returns:
         合并后的文件内容
     """
-    main_file = rm_comments(main_file)
-    for s in reversed([q for q in re.finditer(r"\\input\{(.*?)\}", main_file, re.M)]):
-        f = s.group(1)
-        fp = os.path.join(project_foler, f)
-        fp_ = find_tex_file_ignore_case(fp)
-        if fp_:
-            try:
-                with open(fp_, "r", encoding="utf-8", errors="replace") as fx:
-                    c = fx.read()
-            except:
-                c = f"\n\nWarning from GPT-Academic: LaTex source file is missing!\n\n"
-        else:
-            raise RuntimeError(f"找不到{fp}，Tex源文件缺失！")
-        c = merge_tex_files_(project_foler, c)
-        main_file = main_file[: s.span()[0]] + c + main_file[s.span()[1] :]
-    return main_file
+    return _merge_tex_files(project_foler, main_file, mode=None)
 
 
 def find_title_and_abs(main_file):
@@ -598,51 +518,10 @@ def merge_tex_files(project_foler, main_file, mode):
     Returns:
         合并后的完整文件内容
     """
-    main_file = merge_tex_files_(project_foler, main_file)
-    main_file = rm_comments(main_file)
-
-    if mode == "translate_zh":
-        # find paper documentclass
-        pattern = re.compile(r"\\documentclass.*\n")
-        match = pattern.search(main_file)
-        assert match is not None, "Cannot find documentclass statement!"
-        position = match.end()
-        add_ctex = "\\usepackage{ctex}\n"
-        add_url = "\\usepackage{url}\n" if "{url}" not in main_file else ""
-        main_file = main_file[:position] + add_ctex + add_url + main_file[position:]
-        # fontset=windows
-
-        main_file = re.sub(
-            r"\\documentclass\[(.*?)\]{(.*?)}",
-            r"\\documentclass[\1,fontset=windows,UTF8]{\2}",
-            main_file,
-        )
-        main_file = re.sub(
-            r"\\documentclass{(.*?)}",
-            r"\\documentclass[fontset=windows,UTF8]{\1}",
-            main_file,
-        )
-        # find paper abstract
-        pattern_opt1 = re.compile(r"\\begin\{abstract\}.*\n")
-        pattern_opt2 = re.compile(r"\\abstract\{(.*?)\}", flags=re.DOTALL)
-        match_opt1 = pattern_opt1.search(main_file)
-        match_opt2 = pattern_opt2.search(main_file)
-        if (match_opt1 is None) and (match_opt2 is None):
-            # "Cannot find paper abstract section!"
-            main_file = insert_abstract(main_file)
-        match_opt1 = pattern_opt1.search(main_file)
-        match_opt2 = pattern_opt2.search(main_file)
-        assert (match_opt1 is not None) or (
-            match_opt2 is not None
-        ), "Cannot find paper abstract section!"
-    return main_file
+    return _merge_tex_files(project_foler, main_file, mode)
 
 
-insert_missing_abs_str = r"""
-\begin{abstract}
-The GPT-Academic program cannot find abstract section in this paper.
-\end{abstract}
-"""
+insert_missing_abs_str = _DEFAULT_ABSTRACT_BLOCK
 
 
 def insert_abstract(tex_content):
@@ -657,36 +536,7 @@ def insert_abstract(tex_content):
     Returns:
         插入摘要后的文档内容
     """
-    if "\\maketitle" in tex_content:
-        # find the position of "\maketitle"
-        find_index = tex_content.index("\\maketitle")
-        # find the nearest ending line
-        end_line_index = tex_content.find("\n", find_index)
-        # insert "abs_str" on the next line
-        modified_tex = (
-            tex_content[: end_line_index + 1]
-            + "\n\n"
-            + insert_missing_abs_str
-            + "\n\n"
-            + tex_content[end_line_index + 1 :]
-        )
-        return modified_tex
-    elif r"\begin{document}" in tex_content:
-        # find the position of "\maketitle"
-        find_index = tex_content.index(r"\begin{document}")
-        # find the nearest ending line
-        end_line_index = tex_content.find("\n", find_index)
-        # insert "abs_str" on the next line
-        modified_tex = (
-            tex_content[: end_line_index + 1]
-            + "\n\n"
-            + insert_missing_abs_str
-            + "\n\n"
-            + tex_content[end_line_index + 1 :]
-        )
-        return modified_tex
-    else:
-        return tex_content
+    return _insert_abstract(tex_content)
 
 
 """
@@ -888,5 +738,3 @@ def run_in_subprocess(func):
             return return_dict["result"]
 
     return wrapper
-
-

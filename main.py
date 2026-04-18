@@ -7,8 +7,7 @@ ArXiv LaTeX 翻译与编译工具 - 命令行入口
 import sys
 from loguru import logger
 
-from src.utils import get_conf, load_config, CONFIG
-from src.main_fns import Latex_to_CN_PDF
+from src.config import ConfigError, RunOptions, load_app_config
 
 
 def main():
@@ -22,13 +21,19 @@ def main():
     parser.add_argument("--advanced_arg", type=str, help="额外的翻译提示词（覆盖配置文件）")
     args = parser.parse_args()
 
-    # 加载配置文件
-    load_config(args.config)
+    run_options = RunOptions(
+        arxiv=args.arxiv,
+        model=args.model,
+        advanced_arg=args.advanced_arg,
+    )
 
-    # 命令行参数优先于配置文件
-    arxiv_id = args.arxiv if args.arxiv else CONFIG.get("arxiv")
-    model = args.model if args.model else CONFIG.get("model")
-    advanced_arg = args.advanced_arg if args.advanced_arg else CONFIG.get("advanced_arg")
+    try:
+        app_config = load_app_config(args.config, overrides=run_options)
+    except ConfigError as exc:
+        logger.error(str(exc))
+        sys.exit(1)
+
+    arxiv_id = app_config.arxiv
 
     if not arxiv_id:
         logger.error("必须提供 arxiv 编号或网址。请在 config.json 中设置 'arxiv' 或使用 --arxiv 参数。")
@@ -36,15 +41,22 @@ def main():
         sys.exit(1)
 
     llm_kwargs = {
-        "api_key": get_conf("API_KEY"),
-        "llm_model": model,
-        "temperature": CONFIG.get("temperature", 1.0),
-        "top_p": CONFIG.get("top_p", 1.0),
+        "api_key_env": app_config.llm.api_key_env,
+        "api_key": app_config.llm.api_key,
+        "llm_model": app_config.model,
+        "llm_url": app_config.llm.llm_url,
+        "temperature": app_config.llm.temperature,
+        "top_p": app_config.llm.top_p,
+        "default_worker_num": app_config.default_worker_num,
+        "proxies": app_config.proxies,
     }
 
     plugin_kwargs = {
-        "advanced_arg": advanced_arg
+        "advanced_arg": app_config.advanced_arg,
+        "arxiv_cache_dir": app_config.arxiv_cache_dir,
     }
+
+    from src.main_fns import Latex_to_CN_PDF
 
     Latex_to_CN_PDF(arxiv_id, llm_kwargs, plugin_kwargs)
 

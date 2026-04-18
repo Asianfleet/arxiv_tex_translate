@@ -1,26 +1,31 @@
 """
-工作流模块 - 包含LaTeX翻译和PDF编译的核心工作流。
+工作流模块 - 保留旧入口，并委托到新的工作流实现。
 """
 
-import os
-import glob
-import tarfile
-from functools import partial
+from dataclasses import dataclass, field
+
 from loguru import logger
 
-from src.latex_fns.latex_actions import latex_decomp_and_translate, CompileLatex
-from .file_manager import (
-    ensure_run_dirs,
-    setup_run_logger,
-    archive_compiled_pdfs,
-    prepare_local_project,
-    descend_to_extracted_folder_if_exist,
-    move_project,
-)
-from .arxiv_utils import arxiv_download
-from .prompts import switch_prompt
+from src.workflow import run_translation_workflow
 
-pj = os.path.join
+
+@dataclass(slots=True)
+class LegacyLLMConfig:
+    api_key_env: str = ""
+    api_key: str = ""
+    llm_url: str = ""
+    temperature: float = 1.0
+    top_p: float = 1.0
+
+
+@dataclass(slots=True)
+class LegacyWorkflowConfig:
+    arxiv_cache_dir: str = "arxiv_cache"
+    model: str = ""
+    advanced_arg: str = ""
+    default_worker_num: int = 8
+    proxies: dict | str | None = None
+    llm: LegacyLLMConfig = field(default_factory=LegacyLLMConfig)
 
 
 def Latex_to_CN_PDF(txt, llm_kwargs, plugin_kwargs):
@@ -41,80 +46,25 @@ def Latex_to_CN_PDF(txt, llm_kwargs, plugin_kwargs):
     Returns:
         bool: 翻译和编译是否成功
     """
-    logger.info("开始执行 Latex翻译中文并重新编译PDF 流程...")
+    logger.info("开始执行 Latex 翻译中文并重新编译 PDF 流程...")
 
-    more_req = plugin_kwargs.get("advanced_arg", "")
-    no_cache = ("--no-cache" in more_req)
-    if no_cache: more_req = more_req.replace("--no-cache", "").strip()
-    allow_cache = not no_cache
-    _switch_prompt_ = partial(switch_prompt, more_requirement=more_req)
-
-    sink_id = None
-    run_root = None
-    outputs_dir = None
-    logs_dir = None
-    log_path = None
-    project_folder = None
+    config = LegacyWorkflowConfig(
+        arxiv_cache_dir=plugin_kwargs.get("arxiv_cache_dir", "arxiv_cache"),
+        model=llm_kwargs.get("llm_model", llm_kwargs.get("model", "")),
+        advanced_arg=plugin_kwargs.get("advanced_arg", ""),
+        default_worker_num=llm_kwargs.get("default_worker_num", plugin_kwargs.get("default_worker_num", 8)),
+        proxies=llm_kwargs.get("proxies", plugin_kwargs.get("proxies")),
+        llm=LegacyLLMConfig(
+            api_key_env=llm_kwargs.get("api_key_env", ""),
+            api_key=llm_kwargs.get("api_key", ""),
+            llm_url=llm_kwargs.get("llm_url", ""),
+            temperature=llm_kwargs.get("temperature", 1.0),
+            top_p=llm_kwargs.get("top_p", 1.0),
+        ),
+    )
     try:
-        try:
-            txt, arxiv_id = arxiv_download(txt, allow_cache)
-        except tarfile.ReadError:
-            logger.error("无法自动下载该论文的Latex源码。")
-            return False
-
-        if not txt:
-            return False
-
-        if txt.endswith('.pdf'):
-            run_root, outputs_dir, logs_dir = ensure_run_dirs(arxiv_id)
-            sink_id, log_path = setup_run_logger(logs_dir)
-            project_folder = pj(run_root, 'workfolder') if run_root else None
-            archive_compiled_pdfs(project_folder, outputs_dir)
-            logger.warning(f"发现已经存在翻译好的PDF文档: {txt}")
-            if log_path:
-                logger.info(f"本次命令行日志已保存到: {log_path}")
-            return True
-
-        if not os.path.exists(txt):
-            logger.error(f"找不到本地项目或无法处理: {txt}")
-            return False
-
-        if arxiv_id is None:
-            project_source, run_id = prepare_local_project(txt)
-        else:
-            project_source, run_id = txt, arxiv_id
-
-        run_root, outputs_dir, logs_dir = ensure_run_dirs(run_id)
-        sink_id, log_path = setup_run_logger(logs_dir)
-
-        file_manifest = [f for f in glob.glob(f'{project_source}/**/*.tex', recursive=True)]
-        if len(file_manifest) == 0:
-            logger.error(f"找不到任何.tex文件: {txt}")
-            return False
-
-        project_source = descend_to_extracted_folder_if_exist(project_source)
-        project_folder = move_project(project_source, run_id)
-
-        if not os.path.exists(project_folder + '/merge_translate_zh.tex'):
-            # 同步调用，不再使用 yield
-            latex_decomp_and_translate(file_manifest, project_folder, llm_kwargs, plugin_kwargs,
-                           mode='translate_zh', switch_prompt=_switch_prompt_)
-
-        success = CompileLatex(main_file_original='merge',
-                         main_file_modified='merge_translate_zh', mode='translate_zh',
-                         work_folder_original=project_folder, work_folder_modified=project_folder,
-                         work_folder=project_folder, bilingual_file='merge_bilingual')
-
-        archive_compiled_pdfs(project_folder, outputs_dir)
-
-        if success:
-            logger.info(f"成功啦！结果已保存在 {project_folder}")
-        else:
-            logger.error(f"PDF生成失败。请到 {project_folder} 查看错误日志。")
-
-        if log_path:
-            logger.info(f"本次命令行日志已保存到: {log_path}")
-        return success
-    finally:
-        if sink_id is not None:
-            logger.remove(sink_id)
+        result = run_translation_workflow(txt, config)
+    except Exception as exc:
+        logger.error(f"工作流执行失败: {exc}")
+        return False
+    return bool(result["success"])
