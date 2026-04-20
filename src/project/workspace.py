@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import glob
 import os
 import re
 import shutil
@@ -14,9 +13,6 @@ from loguru import logger
 
 
 pj = os.path.join
-_SKIPPED_PROJECT_DIRS = {"outputs", "logs", "workfolder"}
-
-
 def gen_time_str() -> str:
     """
     生成当前时间字符串，兼容旧目录命名格式。
@@ -74,15 +70,28 @@ def ensure_run_dirs(run_id, cache_dir: str | os.PathLike[str] | None = None):
 
 
 def _copy_project_dir(local_path, run_root):
-    for item in glob.glob(pj(str(local_path), "*")):
-        name = os.path.basename(item)
-        if name in _SKIPPED_PROJECT_DIRS:
-            continue
-        target = pj(run_root, name)
-        if os.path.isdir(item):
-            shutil.copytree(item, target)
-        else:
-            shutil.copy2(item, target)
+    copy_project_to_workfolder(local_path, run_root)
+
+
+def copy_project_to_workfolder(source_project, workfolder):
+    """
+    复制项目到工作目录，仅忽略源目录顶层 runtime 目录。
+    """
+    source_root = os.fspath(source_project)
+    target_root = os.fspath(workfolder)
+    top_level_ignored_names = {"__MACOSX", "workfolder", "outputs", "logs"}
+
+    def _ignore_top_level_only(current_dir, names):
+        if os.path.normpath(current_dir) != os.path.normpath(source_root):
+            return []
+        return [name for name in names if name in top_level_ignored_names]
+
+    shutil.copytree(
+        source_root,
+        target_root,
+        ignore=_ignore_top_level_only,
+        dirs_exist_ok=True,
+    )
 
 
 def prepare_local_project(local_path, cache_dir: str | os.PathLike[str] | None = None):

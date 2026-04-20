@@ -13,6 +13,7 @@ from src.latex.render import render_translated_tex
 from src.latex.segmenter import LatexSegmenter
 from src.llm import OpenAICompatibleClient, translate_segments
 from src.project import download_arxiv_source, resolve_extracted_project_root
+from src.project.workspace import copy_project_to_workfolder
 
 
 @dataclass(slots=True)
@@ -167,12 +168,7 @@ def _prepare_run_dirs(run_root: Path, source: _ResolvedSource) -> tuple[Path, Pa
 
 
 def _copy_project(source_project: Path, workfolder: Path) -> None:
-    ignored_names = {"__MACOSX", "workfolder", "outputs", "logs"}
-
-    def _ignore(current_dir: str, names: list[str]) -> list[str]:
-        return [name for name in names if name in ignored_names]
-
-    shutil.copytree(source_project, workfolder, ignore=_ignore)
+    copy_project_to_workfolder(source_project, workfolder)
 
 
 def _resolve_translations(

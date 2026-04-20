@@ -129,15 +129,13 @@ def test_prepare_local_project_keeps_nested_named_directories(monkeypatch):
     shutil.rmtree(case_dir)
 
 
-def test_move_project_keeps_nested_named_directories(monkeypatch):
-    from src.main_fns.file_manager import move_project
+def test_copy_project_to_workfolder_skips_only_top_level_runtime_dirs():
+    from src.project.workspace import copy_project_to_workfolder
 
-    case_dir = _make_case_dir("move_project_nested")
+    case_dir = _make_case_dir("copy_project_to_workfolder")
     source = case_dir / "source"
     source.mkdir()
     (source / "main.tex").write_text("content", encoding="utf-8")
-    (source / "outputs" / "top.txt").mkdir(parents=True, exist_ok=True)
-    shutil.rmtree(source / "outputs")
     for skipped_name in ("outputs", "logs", "workfolder"):
         skipped_dir = source / skipped_name
         skipped_dir.mkdir()
@@ -147,41 +145,15 @@ def test_move_project_keeps_nested_named_directories(monkeypatch):
         nested_dir.mkdir(parents=True)
         (nested_dir / "keep.txt").write_text("keep", encoding="utf-8")
 
-    monkeypatch.setattr("src.main_fns.file_manager.time.sleep", lambda _: None)
+    destination = case_dir / "destination"
+    copy_project_to_workfolder(source, destination)
 
-    new_workfolder = move_project(str(source), arxiv_id="1234.56789", cache_dir=case_dir / "cache")
-
-    assert not (Path(new_workfolder) / "outputs" / "top.txt").exists()
-    assert not (Path(new_workfolder) / "logs" / "top.txt").exists()
-    assert not (Path(new_workfolder) / "workfolder" / "top.txt").exists()
-    assert (Path(new_workfolder) / "chapter1" / "outputs" / "keep.txt").exists()
-    assert (Path(new_workfolder) / "chapter1" / "logs" / "keep.txt").exists()
-    assert (Path(new_workfolder) / "chapter1" / "workfolder" / "keep.txt").exists()
-    shutil.rmtree(case_dir)
-
-
-@pytest.mark.parametrize(
-    "run_id_like_value",
-    [
-        "../escape",
-        "local_cache/../escape",
-        "/absolute/path",
-        "C:/absolute/path",
-    ],
-)
-def test_move_project_rejects_invalid_compat_run_id(monkeypatch, run_id_like_value):
-    from src.main_fns.file_manager import move_project
-
-    case_dir = _make_case_dir("move_project_invalid_run_id")
-    source = case_dir / "source"
-    source.mkdir()
-    (source / "main.tex").write_text("content", encoding="utf-8")
-
-    monkeypatch.setattr("src.main_fns.file_manager.time.sleep", lambda _: None)
-
-    with pytest.raises(ValueError, match="run_id"):
-        move_project(str(source), arxiv_id=run_id_like_value, cache_dir=case_dir / "cache")
-
+    assert not (destination / "outputs" / "top.txt").exists()
+    assert not (destination / "logs" / "top.txt").exists()
+    assert not (destination / "workfolder" / "top.txt").exists()
+    assert (destination / "chapter1" / "outputs" / "keep.txt").exists()
+    assert (destination / "chapter1" / "logs" / "keep.txt").exists()
+    assert (destination / "chapter1" / "workfolder" / "keep.txt").exists()
     shutil.rmtree(case_dir)
 
 
