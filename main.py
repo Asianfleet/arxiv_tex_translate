@@ -39,7 +39,12 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    result = run_translation_workflow(app_config.arxiv, app_config)
+    try:
+        result = run_translation_workflow(app_config.arxiv, app_config)
+    except Exception as exc:
+        logger.exception(f"工作流执行失败: {exc}")
+        sys.exit(1)
+
     if not result.get("success", False):
         sys.exit(1)
 

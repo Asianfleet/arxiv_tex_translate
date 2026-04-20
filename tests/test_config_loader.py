@@ -220,6 +220,29 @@ def test_main_calls_run_translation_workflow_directly(config_factory, monkeypatc
     assert captured["kwargs"] == {}
 
 
+def test_main_exits_with_status_one_when_workflow_raises(config_factory, monkeypatch):
+    config_path = config_factory(
+        {
+            "api_key_env": "MY_TRANSLATOR_KEY",
+            "arxiv": "2401.00001",
+        },
+    )
+    monkeypatch.setenv("MY_TRANSLATOR_KEY", "secret-token")
+    monkeypatch.setattr(sys, "argv", ["main.py", "--config", str(config_path)])
+
+    main_module = importlib.import_module("main")
+
+    def fake_run_translation_workflow(input_value, config, **kwargs):
+        raise RuntimeError("workflow failed")
+
+    monkeypatch.setattr(main_module, "run_translation_workflow", fake_run_translation_workflow)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_module.main()
+
+    assert exc_info.value.code == 1
+
+
 @pytest.mark.parametrize(
     ("field_name", "field_value"),
     [
