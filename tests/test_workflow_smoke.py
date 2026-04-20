@@ -1,6 +1,19 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
+
+
+@pytest.fixture
+def config_factory(workflow_case_dir):
+    def _create_config(data: dict) -> Path:
+        config_path = workflow_case_dir / "config.json"
+        config_path.write_text(json.dumps(data), encoding="utf-8")
+        return config_path
+
+    return _create_config
 
 
 def test_run_translation_workflow_writes_expected_outputs(sample_project_dir, fake_config):
@@ -22,49 +35,6 @@ def test_run_translation_workflow_writes_expected_outputs(sample_project_dir, fa
     assert (project_folder / "merge_bilingual.tex").exists()
     assert (project_folder / "debug_log.html").exists()
     assert "你好，世界。" in (project_folder / "merge_translate_zh.tex").read_text(encoding="utf-8")
-
-
-def test_legacy_workflow_wrapper_delegates_to_new_workflow(monkeypatch):
-    from src.main_fns import workflow as workflow_module
-
-    captured = {}
-
-    def fake_run_translation_workflow(input_value, config, **kwargs):
-        captured["input_value"] = input_value
-        captured["config"] = config
-        captured["kwargs"] = kwargs
-        return {
-            "project_folder": "unused",
-            "outputs_dir": "unused",
-            "success": True,
-        }
-
-    monkeypatch.setattr(workflow_module, "run_translation_workflow", fake_run_translation_workflow)
-
-    result = workflow_module.Latex_to_CN_PDF(
-        "demo-input",
-        llm_kwargs={
-            "api_key": "legacy-key",
-            "llm_model": "qwen-plus",
-            "llm_url": "https://legacy.example/v1",
-            "temperature": 0.3,
-            "top_p": 0.8,
-            "default_worker_num": 4,
-            "proxies": {"https": "http://proxy.local:8080"},
-        },
-        plugin_kwargs={"advanced_arg": "保留术语。"},
-    )
-
-    assert result is True
-    assert captured["input_value"] == "demo-input"
-    assert captured["config"].model == "qwen-plus"
-    assert captured["config"].advanced_arg == "保留术语。"
-    assert captured["config"].default_worker_num == 4
-    assert captured["config"].proxies == {"https": "http://proxy.local:8080"}
-    assert captured["config"].llm.api_key == "legacy-key"
-    assert captured["config"].llm.llm_url == "https://legacy.example/v1"
-    assert captured["config"].llm.temperature == 0.3
-    assert captured["config"].llm.top_p == 0.8
 
 
 def test_run_translation_workflow_returns_cached_pdf_from_arxiv_download(monkeypatch, workflow_case_dir, fake_config):
@@ -141,21 +111,35 @@ def test_run_translation_workflow_uses_arxiv_id_root_and_syncs_legacy_outputs(
     assert "local_cache" not in result["project_folder"]
 
 
-def test_legacy_workflow_wrapper_returns_false_when_workflow_raises(monkeypatch):
-    from src.main_fns import workflow as workflow_module
+def test_main_cli_uses_new_workflow_entry(monkeypatch, config_factory):
+    import main as main_module
+
+    config_path = config_factory(
+        {
+            "api_key_env": "MY_TRANSLATOR_KEY",
+            "arxiv": "demo-input",
+        },
+    )
+    monkeypatch.setenv("MY_TRANSLATOR_KEY", "secret-token")
+    monkeypatch.setattr(main_module.sys, "argv", ["main.py", "--config", str(config_path)])
+
+    captured = {}
 
     def fake_run_translation_workflow(input_value, config, **kwargs):
-        raise RuntimeError("boom")
+        captured["input_value"] = input_value
+        captured["config"] = config
+        return {
+            "project_folder": "unused",
+            "outputs_dir": "unused",
+            "success": True,
+        }
 
-    monkeypatch.setattr(workflow_module, "run_translation_workflow", fake_run_translation_workflow)
+    monkeypatch.setattr(main_module, "run_translation_workflow", fake_run_translation_workflow)
 
-    result = workflow_module.Latex_to_CN_PDF(
-        "demo-input",
-        llm_kwargs={"llm_model": "qwen-plus"},
-        plugin_kwargs={},
-    )
+    main_module.main()
 
-    assert result is False
+    assert captured["input_value"] == "demo-input"
+    assert captured["config"].arxiv == "demo-input"
 
 
 def test_run_translation_workflow_reads_api_key_from_api_key_env(

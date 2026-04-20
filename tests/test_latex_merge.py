@@ -4,8 +4,6 @@ from pathlib import Path
 
 import pytest
 
-from src.latex_fns import latex_toolbox
-
 
 def _write(path: Path, content: str) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -60,10 +58,9 @@ def test_find_main_tex_file_ignores_merge_and_scores_body_features():
         selected = find_main_tex_file([merge_file, template_file, main_file])
 
         assert selected == main_file
-        assert latex_toolbox.find_main_tex_file([str(merge_file), str(template_file), str(main_file)]) == str(main_file)
 
 
-def test_remove_comments_preserves_escaped_percent_for_new_and_old_api():
+def test_remove_comments_preserves_escaped_percent():
     from src.latex.merge import remove_comments
 
     content = "\n".join(
@@ -79,7 +76,6 @@ def test_remove_comments_preserves_escaped_percent_for_new_and_old_api():
     expected = "\n".join(["value ", r"keep \% percent", "plain"])
 
     assert remove_comments(content) == expected
-    assert latex_toolbox.rm_comments(content) == expected
 
 
 def test_remove_comments_distinguishes_even_and_odd_backslashes_before_percent():
@@ -100,7 +96,6 @@ def test_remove_comments_distinguishes_even_and_odd_backslashes_before_percent()
     )
 
     assert remove_comments(content) == expected
-    assert latex_toolbox.rm_comments(content) == expected
 
 
 def test_find_tex_file_ignore_case_resolves_missing_suffix():
@@ -112,7 +107,6 @@ def test_find_tex_file_ignore_case_resolves_missing_suffix():
         resolved = find_tex_file_ignore_case(case_dir / "Sections" / "Intro")
 
         assert resolved == target
-        assert latex_toolbox.find_tex_file_ignore_case(str(case_dir / "Sections" / "Intro")) == str(target)
 
 
 def test_merge_project_tex_expands_recursive_inputs_and_removes_comments():
@@ -145,10 +139,8 @@ def test_merge_project_tex_expands_recursive_inputs_and_removes_comments():
         assert "% hidden" not in merged
         assert r"\input{sections/intro}" not in merged
 
-        wrapped = latex_toolbox.merge_tex_files_(str(case_dir), main_file.read_text(encoding="utf-8"))
         merged_plain = merge_tex_files(case_dir, main_file.read_text(encoding="utf-8"), "proofread")
 
-        assert wrapped == merged
         assert merged_plain == merged
 
 
@@ -183,18 +175,16 @@ def test_merge_tex_files_translate_zh_injects_preamble_and_default_abstract():
         )
 
         merged = merge_tex_files(case_dir, main, "translate_zh")
-        wrapped = latex_toolbox.merge_tex_files(str(case_dir), main, "translate_zh")
 
         assert r"\documentclass[fontset=windows,UTF8]{article}" in merged
         assert r"\usepackage{ctex}" in merged
         assert r"\usepackage{url}" in merged
         assert merged.index(r"\usepackage{ctex}") > merged.index(r"\documentclass[fontset=windows,UTF8]{article}")
         assert merged.index(r"\begin{abstract}") > merged.index(r"\maketitle")
-        assert wrapped == merged
 
 
 def test_ensure_zh_preamble_respects_existing_abstract_and_insert_abstract_wrapper():
-    from src.latex.merge import ensure_zh_preamble
+    from src.latex.merge import ensure_zh_preamble, insert_abstract
 
     with_existing_abstract = (
         r"\documentclass[twocolumn]{article}"
@@ -223,7 +213,7 @@ def test_ensure_zh_preamble_respects_existing_abstract_and_insert_abstract_wrapp
         "Body\n"
         r"\end{document}"
     )
-    inserted = latex_toolbox.insert_abstract(no_abstract)
+    inserted = insert_abstract(no_abstract)
 
     assert inserted.index(r"\begin{abstract}") > inserted.index(r"\begin{document}")
 

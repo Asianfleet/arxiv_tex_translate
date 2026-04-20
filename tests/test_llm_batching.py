@@ -97,19 +97,15 @@ def test_can_multi_process_supports_known_prefixes():
     assert can_multi_process("unknown-model") is False
 
 
-def test_can_multi_process_consults_legacy_model_info_and_bridge_matches(monkeypatch):
-    from src import llm_utils
+def test_can_multi_process_prefers_explicit_model_metadata(monkeypatch):
     from src.llm import batching
-    from src.utils import model_info
 
-    monkeypatch.setitem(model_info, "custom-parallel", {"can_multi_thread": True})
-    monkeypatch.setitem(model_info, "qwen-serial", {"can_multi_thread": False})
+    monkeypatch.setitem(batching.model_info, "custom-parallel", {"can_multi_thread": True})
+    monkeypatch.setitem(batching.model_info, "qwen-serial", {"can_multi_thread": False})
 
     assert batching.can_multi_process("custom-parallel") is True
-    assert llm_utils.can_multi_process("custom-parallel") is True
     assert batching.can_multi_process("qwen-serial") is False
-    assert llm_utils.can_multi_process("qwen-serial") is False
-    assert llm_utils.can_multi_process(" QWEN-plus ") == batching.can_multi_process(" QWEN-plus ")
+    assert batching.can_multi_process(" QWEN-plus ") is True
 
 
 def test_translate_segments_preserves_result_order():
@@ -201,9 +197,8 @@ def test_translate_segments_falls_back_to_single_worker_for_unknown_model(monkey
     assert results == ["单线程译文", "单线程译文"]
 
 
-def test_llm_package_and_legacy_module_expose_compatible_exports():
+def test_llm_package_exposes_core_exports():
     import src.llm as llm
-    from src import llm_utils
 
     assert callable(llm.OpenAICompatibleClient)
     assert callable(llm.build_translate_prompt)
@@ -211,7 +206,3 @@ def test_llm_package_and_legacy_module_expose_compatible_exports():
     assert callable(llm.translate_segments)
     assert "TranslatePrompt" not in getattr(llm, "__all__", [])
     assert not hasattr(llm, "TranslatePrompt")
-    assert callable(llm_utils.request_llm_multi_threads)
-    assert callable(llm_utils.input_clipping)
-    assert callable(llm_utils.can_multi_process)
-    assert callable(llm_utils.translate_segments)
