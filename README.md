@@ -160,17 +160,6 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
 │   ├── latex/                  # LaTeX 合并、分段、渲染、编译模块
 │   ├── llm/                    # OpenAI 兼容客户端、批量翻译与流式能力
 │   ├── project/                # 项目缓存、输出与 ArXiv 辅助模块
-│   ├── utils.py                # 旧接口兼容配置桥
-│   ├── llm_utils.py            # 旧 LLM 接口兼容桥
-│   ├── latex_fns/              # 旧 LaTeX 处理模块（兼容保留）
-│   │   ├── latex_actions.py    # LaTeX分解转换核心逻辑
-│   │   ├── latex_toolbox.py    # LaTeX处理工具库
-│   │   └── latex_pickle_io.py  # 安全对象序列化
-│   └── main_fns/               # 旧入口兼容包装
-│       ├── arxiv_utils.py      # ArXiv 下载兼容入口
-│       ├── file_manager.py     # 文件管理兼容入口
-│       ├── prompts.py          # 翻译提示词模板
-│       └── workflow.py         # 旧工作流兼容入口
 └── arxiv_cache/                # 缓存目录
     └── {arxiv_id}/
         ├── extract/            # 解压后的 LaTeX 源码
@@ -188,7 +177,7 @@ python main.py --arxiv 1812.10695 --advanced_arg "--no-cache"
             └── merge_bilingual.pdf
 ```
 
-当前核心路径已经迁移到 `src/workflow.py`、`src/latex/`、`src/llm/` 与 `src/project/`；旧 `src.main_fns.workflow.Latex_to_CN_PDF`、`src.utils`、`src.llm_utils` 仅保留为兼容包装器。
+当前正式实现路径只有 `main.py`、`src/workflow.py`、`src/config/`、`src/latex/`、`src/llm/` 与 `src/project/`。
 
 ## 输出文件说明
 
