@@ -7,7 +7,6 @@ import pytest
 
 from src.config.loader import ConfigError, load_app_config
 from src.config.models import RunOptions
-from src.utils import get_conf, load_config
 
 
 @pytest.fixture
@@ -116,37 +115,6 @@ def test_empty_string_override_does_not_replace_config_value(config_factory, mon
     assert config.advanced_arg == "from-config"
 
 
-def test_utils_load_config_exposes_legacy_api_key_accessor(config_factory, monkeypatch):
-    config_path = config_factory(
-        {
-            "api_key_env": "MY_TRANSLATOR_KEY",
-        },
-    )
-    monkeypatch.setenv("MY_TRANSLATOR_KEY", "secret-token")
-
-    load_config(str(config_path))
-
-    assert get_conf("API_KEY") == "secret-token"
-
-
-def test_old_module_reads_updated_config_after_import(config_factory, monkeypatch):
-    file_manager = importlib.import_module("src.main_fns.file_manager")
-    config_path = config_factory(
-        {
-            "api_key_env": "MY_TRANSLATOR_KEY",
-            "arxiv_cache_dir": "custom_cache_dir",
-        },
-    )
-    monkeypatch.setenv("MY_TRANSLATOR_KEY", "secret-token")
-
-    load_config(str(config_path))
-
-    assert Path(file_manager.get_run_root("demo-paper")).parts[-2:] == (
-        "custom_cache_dir",
-        "demo-paper",
-    )
-
-
 def test_load_app_config_wraps_invalid_json_as_config_error(config_factory, monkeypatch):
     config_path = config_factory({"api_key_env": "MY_TRANSLATOR_KEY"})
     config_path.write_text("{bad json", encoding="utf-8")
@@ -218,6 +186,38 @@ def test_main_exits_with_status_one_on_config_error(config_factory, monkeypatch)
         main_module.main()
 
     assert exc_info.value.code == 1
+
+
+def test_main_calls_run_translation_workflow_directly(config_factory, monkeypatch):
+    config_path = config_factory(
+        {
+            "api_key_env": "MY_TRANSLATOR_KEY",
+            "arxiv": "2401.00001",
+        },
+    )
+    monkeypatch.setenv("MY_TRANSLATOR_KEY", "secret-token")
+    monkeypatch.setattr(sys, "argv", ["main.py", "--config", str(config_path)])
+
+    main_module = importlib.import_module("main")
+    captured = {}
+
+    def fake_run_translation_workflow(input_value, config, **kwargs):
+        captured["input_value"] = input_value
+        captured["config"] = config
+        captured["kwargs"] = kwargs
+        return {
+            "project_folder": "unused",
+            "outputs_dir": "unused",
+            "success": True,
+        }
+
+    monkeypatch.setattr(main_module, "run_translation_workflow", fake_run_translation_workflow)
+
+    main_module.main()
+
+    assert captured["input_value"] == "2401.00001"
+    assert captured["config"].arxiv == "2401.00001"
+    assert captured["kwargs"] == {}
 
 
 @pytest.mark.parametrize(
