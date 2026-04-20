@@ -2,27 +2,29 @@
 
 ## 0. 落地状态
 
-本设计对应的删除与收敛工作已完成，当前仓库状态为：
+本设计对应的删除与收敛工作已完成。按当前 git 跟踪源码状态：
 
 - 正式实现已收敛到 `main.py`、`src/workflow.py`、`src/config/`、`src/latex/`、`src/llm/`、`src/project/`
-- legacy 模块 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 已物理删除
+- legacy Python 源文件入口 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 已从 git 跟踪源码中删除
 - `main.py` 已直接调用新配置加载与新工作流入口
-- 测试与文档已同步到新正式实现路径
+- 测试与面向实现路径的文档表述已同步到新正式实现路径；README 仍单独保留兼容输出目录说明
 
-最终验证已确认：
+本次落地时已执行以下最终验证：
 
-- `python -m pytest tests -v`：`93 passed`
-- `python -m pytest tests/test_project_workspace.py tests/test_workflow_smoke.py -v`：`22 passed`
-- `git grep -n "src\.main_fns\|src\.latex_fns\|src\.llm_utils\|src\.utils" -- main.py src tests README.md AGENTS.md`：无输出，退出码 `1`
+- `python -m pytest tests -v`：通过
+- `python -m pytest tests/test_project_workspace.py tests/test_workflow_smoke.py -v`：通过
+- `git grep -n "src\.main_fns\|src\.latex_fns\|src\.llm_utils\|src\.utils" -- main.py src tests README.md AGENTS.md`：在该扫描范围内无输出，退出码 `1`
+
+说明：当前工作区若存在 `src/main_fns/__pycache__`、`src/latex_fns/__pycache__` 等目录，均视为未纳入版本控制的运行产物，不属于本设计所说的 legacy 源码入口。
 
 ## 1. 背景
 
-当前仓库已经完成核心重构：
+在开始删除 legacy 之前，仓库已经完成核心重构：
 
 - 正式实现集中在 `src/workflow.py`、`src/config/`、`src/latex/`、`src/llm/`、`src/project/`
-- 旧路径 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 已完成物理删除
+- 旧路径 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 的正式源码仍保留在仓库中
 
-但仓库仍然同时维护两套认知模型：
+当时仓库仍然同时维护两套认知模型：
 
 - 一套是新的流水线架构
 - 一套是旧的导入路径、旧的工具层、旧的测试与文档叙述
@@ -31,7 +33,7 @@
 
 1. 维护者很难判断“哪个入口才是正式实现”
 2. 删除旧逻辑时容易因为兼容层反向拖住新模块演进
-3. 测试和 README 仍然把旧路径当成可用接口，阻碍彻底收敛
+3. 测试和 README 仍然把旧路径当成可用接口或维护对象，阻碍彻底收敛
 
 本次工作的目标不是继续做“兼容式并存”，而是**物理删除旧逻辑与旧接口，只保留新模块树作为唯一正式实现**；这一目标现已落地。
 
@@ -65,9 +67,9 @@
    - ArXiv 缓存语义与本地项目缓存语义不变
    - 输出 PDF 与核心中间产物语义不变
 
-5. **同步收敛测试与文档**
+5. **同步收敛测试与文档表述**
    - 测试只验证新正式接口
-   - README 只描述新架构
+   - README 只把新模块树描述为正式实现路径，不再把 legacy Python 模块写成可用接口
 
 ### 2.2 非目标
 
@@ -127,14 +129,14 @@ docs/
 - `src/workflow.py`
   - 总编排入口
 
-### 4.3 明确不再存在的模块
+### 4.3 明确不再作为正式源码存在的 legacy 入口
 
 - `src/main_fns/`
 - `src/utils.py`
 - `src/llm_utils.py`
 - `src/latex_fns/`
 
-这些路径已经不再作为导入目标、文档入口或测试对象出现。
+这些 legacy Python 入口已经不再作为导入目标、文档入口或测试对象出现。
 
 ---
 
@@ -168,10 +170,10 @@ docs/
 
 #### 第三步：切文档（已完成）
 
-- README 删除“兼容包装器”“旧入口保留”“旧模块仍可用”等表述
+- README 删除“兼容包装器”“旧入口保留”“旧模块仍可用”等 legacy Python 模块表述；兼容输出目录说明单独保留
 - AGENTS.md 明确新模块树是唯一正式实现
 
-#### 第四步：物理删除旧模块（已完成）
+#### 第四步：删除 legacy Python 源文件（已完成）
 
 - 删除 `src/main_fns/`
 - 删除 `src/utils.py`
@@ -180,9 +182,9 @@ docs/
 
 #### 第五步：回归验证（已完成）
 
-- 已跑全量测试并通过
-- 已完成 legacy 引用扫描
-- 已确认没有残留导入
+- 已执行全量测试
+- 已执行高风险分支回归
+- 已在 `main.py`、`src`、`tests`、`README.md`、`AGENTS.md` 范围内完成 legacy 引用扫描并确认无残留导入
 
 ---
 
@@ -301,7 +303,7 @@ docs/
 
 ## 9. 验收标准
 
-删除完成后必须同时满足；当前仓库已经满足：
+删除完成后必须同时满足；按本次落地时的验证结果，当前 git 跟踪源码已经满足：
 
 1. `git grep` 不再出现以下引用：
    - `src.main_fns`
@@ -309,7 +311,7 @@ docs/
    - `src.llm_utils`
    - `src.utils`
 
-2. 仓库内只剩一套正式实现路径：
+2. git 跟踪源码内只剩一套正式实现路径：
    - `main.py`
    - `src/workflow.py`
    - `src/config/`
@@ -323,11 +325,11 @@ docs/
 
 5. ArXiv/本地缓存语义不变
 
-6. 全量测试通过
+6. 回归验证通过
 
-7. README 不再描述旧模块为可用接口
+7. README 不再描述旧 Python 模块为可用接口
 
-8. 删除是物理删除，不是换名保留或再加一层兼容壳
+8. git 跟踪的 legacy Python 源文件已删除，不是换名保留或再加一层兼容壳
 
 ---
 
