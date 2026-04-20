@@ -1,11 +1,26 @@
-# arxiv_tex_translate 彻底删除 legacy 逻辑设计
+# arxiv_tex_translate 彻底删除 legacy 逻辑设计（已落地）
+
+## 0. 落地状态
+
+本设计对应的删除与收敛工作已完成，当前仓库状态为：
+
+- 正式实现已收敛到 `main.py`、`src/workflow.py`、`src/config/`、`src/latex/`、`src/llm/`、`src/project/`
+- legacy 模块 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 已物理删除
+- `main.py` 已直接调用新配置加载与新工作流入口
+- 测试与文档已同步到新正式实现路径
+
+最终验证已确认：
+
+- `python -m pytest tests -v`：`93 passed`
+- `python -m pytest tests/test_project_workspace.py tests/test_workflow_smoke.py -v`：`22 passed`
+- `git grep -n "src\.main_fns\|src\.latex_fns\|src\.llm_utils\|src\.utils" -- main.py src tests README.md AGENTS.md`：无输出，退出码 `1`
 
 ## 1. 背景
 
 当前仓库已经完成核心重构：
 
 - 正式实现集中在 `src/workflow.py`、`src/config/`、`src/latex/`、`src/llm/`、`src/project/`
-- 旧路径 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 主要只剩兼容包装或历史实现
+- 旧路径 `src/main_fns/`、`src/utils.py`、`src/llm_utils.py`、`src/latex_fns/` 已完成物理删除
 
 但仓库仍然同时维护两套认知模型：
 
@@ -18,7 +33,7 @@
 2. 删除旧逻辑时容易因为兼容层反向拖住新模块演进
 3. 测试和 README 仍然把旧路径当成可用接口，阻碍彻底收敛
 
-本次工作的目标不是继续做“兼容式并存”，而是**物理删除旧逻辑与旧接口，只保留新模块树作为唯一正式实现**。
+本次工作的目标不是继续做“兼容式并存”，而是**物理删除旧逻辑与旧接口，只保留新模块树作为唯一正式实现**；这一目标现已落地。
 
 ---
 
@@ -80,7 +95,7 @@
 
 ## 4. 目标架构
 
-删除完成后，仓库的正式架构应收敛为：
+删除完成后，仓库的正式架构已收敛为：
 
 ```text
 main.py
@@ -119,11 +134,11 @@ docs/
 - `src/llm_utils.py`
 - `src/latex_fns/`
 
-这些路径在删除后不应再作为导入目标、文档入口或测试对象出现。
+这些路径已经不再作为导入目标、文档入口或测试对象出现。
 
 ---
 
-## 5. 删除策略
+## 5. 实施结果
 
 ### 5.1 总原则
 
@@ -135,37 +150,39 @@ docs/
 
 不能反过来先删文件再边跑边补，这样容易混入临时兼容壳，最后形成“名义删除、实际保留”的伪重构。
 
+上述顺序已经按实施完成，并通过最终回归验证确认没有引入兼容壳回退。
+
 ### 5.2 具体步骤
 
-#### 第一步：切正式入口
+#### 第一步：切正式入口（已完成）
 
 - 修改 `main.py`
 - 直接使用 `src.config.load_app_config`
 - 直接调用 `src.workflow.run_translation_workflow`
 - 去掉 `src.main_fns.workflow.Latex_to_CN_PDF` 路径
 
-#### 第二步：切测试
+#### 第二步：切测试（已完成）
 
 - 删除或重写所有依赖旧导入路径的测试
 - 测试只围绕新模块树与 CLI 行为
 
-#### 第三步：切文档
+#### 第三步：切文档（已完成）
 
 - README 删除“兼容包装器”“旧入口保留”“旧模块仍可用”等表述
 - AGENTS.md 明确新模块树是唯一正式实现
 
-#### 第四步：物理删除旧模块
+#### 第四步：物理删除旧模块（已完成）
 
 - 删除 `src/main_fns/`
 - 删除 `src/utils.py`
 - 删除 `src/llm_utils.py`
 - 删除 `src/latex_fns/`
 
-#### 第五步：回归验证
+#### 第五步：回归验证（已完成）
 
-- 跑全量测试
-- 做一次 legacy 引用扫描
-- 确认没有残留导入
+- 已跑全量测试并通过
+- 已完成 legacy 引用扫描
+- 已确认没有残留导入
 
 ---
 
@@ -284,7 +301,7 @@ docs/
 
 ## 9. 验收标准
 
-删除完成后必须同时满足：
+删除完成后必须同时满足；当前仓库已经满足：
 
 1. `git grep` 不再出现以下引用：
    - `src.main_fns`
@@ -316,11 +333,11 @@ docs/
 
 ## 10. 最终建议
 
-本次“删旧”不应被当成简单的删除文件动作，而应视为一次**正式实现路径收敛**：
+本次“删旧”不应被当成简单的删除文件动作，而应视为一次**正式实现路径收敛**。当前结果已经证明：
 
 > 只有当 `main.py`、测试、文档、模块树都同时收敛到新架构，legacy 删除才算真正完成。
 
-因此，实施时应采用“先切正式入口与测试，再做物理删除”的策略。这样能保证：
+本次实施采用了“先切正式入口与测试，再做物理删除”的策略，结果证明这样能保证：
 
 - 删除动作可验证
 - 新架构成为唯一认知入口
