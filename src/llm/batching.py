@@ -62,6 +62,8 @@ def _translate_task(
     top_p: float,
     proxies: dict | None,
 ) -> str:
+    if not task.fragment.strip():
+        return task.fragment
     system_prompt, user_prompt = build_translate_prompt(task.more_requirement, task.fragment)
     return client.translate(
         model=model,

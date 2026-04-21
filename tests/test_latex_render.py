@@ -47,7 +47,8 @@ def test_sanitize_translation_falls_back_on_traceback_marker():
 def test_sanitize_translation_escapes_percent_and_removes_command_space():
     from src.latex.sanitize import sanitize_translation
 
-    sanitized = sanitize_translation(r"Rate is 50% and \textbf {value}.", "Original")
+    original = r"Rate is 50% and \textbf{value}."
+    sanitized = sanitize_translation(r"Rate is 50% and \textbf {value}.", original)
 
     assert sanitized == r"Rate is 50\% and \textbf{value}."
 
@@ -57,6 +58,33 @@ def test_sanitize_translation_falls_back_when_begin_count_changes():
 
     original = r"\begin{itemize}item\end{itemize}"
     translated = "plain text"
+
+    assert sanitize_translation(translated, original) == original
+
+
+def test_sanitize_translation_falls_back_when_unescaped_ampersand_count_changes():
+    from src.latex.sanitize import sanitize_translation
+
+    original = r"\textbf{Question:} & Left cell \\ \hline"
+    translated = r"\textbf{问题：} & 左列 & 多出来的列 \\ \hline"
+
+    assert sanitize_translation(translated, original) == original
+
+
+def test_sanitize_translation_falls_back_for_alignment_sensitive_segments_even_if_ampersand_count_matches():
+    from src.latex.sanitize import sanitize_translation
+
+    original = r"A & Left \\ \hline B & Right \\ \hline C & Tail \\ \hline"
+    translated = r"A & 左列 B & 右列 C & 尾列 \\ \hline"
+
+    assert sanitize_translation(translated, original) == original
+
+
+def test_sanitize_translation_falls_back_when_translation_introduces_new_latex_command():
+    from src.latex.sanitize import sanitize_translation
+
+    original = r"See Section \ref{sec:demo} for details."
+    translated = r"参见 \section 中的 \ref{sec:demo} 说明。"
 
     assert sanitize_translation(translated, original) == original
 
@@ -217,15 +245,16 @@ def test_recover_rendered_tex_restores_exact_original_without_sanitize_changes()
     from src.latex.render import render_translated_tex
 
     original = r"Rate 50% and \textbf {raw}"
+    translation = r"译文 50% and \textbf {raw}"
     plan = _plan(
         _segment(0, original, translatable=True, line_start=1, line_end=1),
     )
-    rendered_target = render_translated_tex(plan, ["译文"], "gpt_5_exact", 0.2)
+    rendered_target = render_translated_tex(plan, [translation], "gpt_5_exact", 0.2)
     buggy_line = _line_number_for(rendered_target, "译文")
 
     recovered = recover_rendered_tex(
         plan,
-        translations=["译文"],
+        translations=[translation],
         buggy_lines=[buggy_line],
         model_name="gpt_5_exact",
         temperature=0.2,

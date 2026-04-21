@@ -168,3 +168,35 @@ def test_compile_latex_project_returns_false_when_main_pdf_is_missing(monkeypatc
 
         assert compile_latex_project(case_dir, "main") is False
         assert commands == [["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "main.tex"]]
+
+
+def test_compile_latex_project_reuses_existing_bbl_when_bib_file_is_missing(monkeypatch):
+    from src.latex.compiler import compile_latex_project
+
+    with _case_dir("compile_project_reuse_bbl") as case_dir:
+        (case_dir / "merge_translate_zh.tex").write_text(
+            r"\documentclass{article}" "\n" r"\begin{document}\cite{ref}\bibliography{main}\end{document}",
+            encoding="utf-8",
+        )
+        (case_dir / "main.bbl").write_text(
+            r"\begin{thebibliography}{1}" "\n" r"\bibitem{ref}Ref." "\n" r"\end{thebibliography}",
+            encoding="utf-8",
+        )
+
+        commands: list[list[str]] = []
+
+        def fake_run_compile(command: list[str], cwd: Path) -> bool:
+            commands.append(command)
+            if command == ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "merge_translate_zh.tex"]:
+                (cwd / "merge_translate_zh.aux").write_text(r"\relax\bibdata{main}", encoding="utf-8")
+                if commands.count(command) >= 3:
+                    (cwd / "merge_translate_zh.pdf").write_text("pdf", encoding="utf-8")
+            return True
+
+        monkeypatch.setattr("src.latex.compiler.run_compile", fake_run_compile)
+
+        assert compile_latex_project(case_dir, "merge_translate_zh") is True
+        assert ["bibtex", "merge_translate_zh"] not in commands
+        assert (case_dir / "merge_translate_zh.bbl").read_text(encoding="utf-8") == (
+            case_dir / "main.bbl"
+        ).read_text(encoding="utf-8")

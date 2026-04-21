@@ -1,4 +1,7 @@
+import io
 import shutil
+import tarfile
+import uuid
 from pathlib import Path
 
 import pytest
@@ -187,4 +190,31 @@ def test_ensure_run_dirs_rejects_invalid_run_id(monkeypatch, run_id):
     with pytest.raises(ValueError, match="run_id"):
         ensure_run_dirs(run_id, cache_dir=case_dir / "cache")
 
+    shutil.rmtree(case_dir)
+
+
+def test_extract_archive_extracts_tar_with_nested_directory_files():
+    from src.project.arxiv import extract_archive
+
+    case_dir = Path("tests") / "_tmp_project_workspace" / f"extract_archive_nested_files_{uuid.uuid4().hex}"
+    case_dir.mkdir(parents=True, exist_ok=False)
+    archive_path = case_dir / "sample.tar"
+    destination = case_dir / "extract"
+    file_content = b"hello tar"
+
+    with tarfile.open(archive_path, "w") as tar:
+        directory = tarfile.TarInfo("figures")
+        directory.type = tarfile.DIRTYPE
+        directory.mode = 0o775
+        tar.addfile(directory)
+
+        nested_file = tarfile.TarInfo("figures/questions.png")
+        nested_file.size = len(file_content)
+        nested_file.mode = 0o664
+        tar.addfile(nested_file, io.BytesIO(file_content))
+
+    extract_archive(archive_path, destination)
+
+    extracted_file = destination / "figures" / "questions.png"
+    assert extracted_file.read_bytes() == file_content
     shutil.rmtree(case_dir)

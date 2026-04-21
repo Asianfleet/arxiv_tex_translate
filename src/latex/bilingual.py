@@ -4,10 +4,11 @@ import re
 from pathlib import Path
 
 
-DOCUMENT_BODY_PATTERN = re.compile(
-    r"\\begin\{document\}(?P<body>.*)\\end\{document\}",
+DOCUMENT_PATTERN = re.compile(
+    r"(?P<preamble>.*)\\begin\{document\}(?P<body>.*)\\end\{document\}",
     re.DOTALL,
 )
+LEADING_MAKETITLE_PATTERN = re.compile(r"^\s*\\maketitle\b\s*", re.DOTALL)
 
 
 def merge_bilingual_caption(
@@ -31,28 +32,46 @@ def merge_bilingual_caption(
     return english_text
 
 
-def _extract_document_body(tex: str) -> str:
-    match = DOCUMENT_BODY_PATTERN.search(tex)
+def _split_document(tex: str) -> tuple[str, str]:
+    match = DOCUMENT_PATTERN.search(tex)
     if match is None:
-        return tex.strip()
-    return match.group("body").strip()
+        return "", tex.strip()
+    return match.group("preamble").strip(), match.group("body").strip()
+
+
+def _ensure_package(preamble: str, package_name: str) -> str:
+    package_pattern = re.compile(rf"\\usepackage(?:\[[^\]]*\])?\{{{re.escape(package_name)}\}}")
+    if package_pattern.search(preamble):
+        return preamble
+    return preamble.rstrip() + "\n" + rf"\usepackage{{{package_name}}}"
+
+
+def _build_bilingual_preamble(source_preamble: str) -> str:
+    preamble = source_preamble.strip()
+    if not preamble:
+        preamble = r"\documentclass[fontset=windows,UTF8]{article}"
+    preamble = _ensure_package(preamble, "ctex")
+    preamble = _ensure_package(preamble, "xcolor")
+    if r"\definecolor{bilingualzhcolor}" not in preamble:
+        preamble = preamble.rstrip() + "\n" + r"\definecolor{bilingualzhcolor}{RGB}{128,128,128}"
+    return preamble
+
+
+def _strip_leading_maketitle(body: str) -> str:
+    return LEADING_MAKETITLE_PATTERN.sub("", body, count=1)
 
 
 def generate_bilingual_tex(english_tex: str, chinese_tex: str) -> str:
-    english_body = _extract_document_body(english_tex)
-    chinese_body = _extract_document_body(chinese_tex)
+    english_preamble, english_body = _split_document(english_tex)
+    _chinese_preamble, chinese_body = _split_document(chinese_tex)
+    preamble = _build_bilingual_preamble(english_preamble)
+    chinese_body = _strip_leading_maketitle(chinese_body)
 
     return (
-        r"\documentclass[fontset=windows,UTF8]{article}"
-        "\n"
-        r"\usepackage{ctex}"
-        "\n"
-        r"\usepackage{xcolor}"
-        "\n"
-        r"\definecolor{bilingualzhcolor}{RGB}{128,128,128}"
-        "\n"
-        r"\begin{document}"
-        "\n"
+        preamble
+        + "\n"
+        + r"\begin{document}"
+        + "\n"
         + english_body
         + "\n\n"
         + r"\begingroup\color{bilingualzhcolor}"

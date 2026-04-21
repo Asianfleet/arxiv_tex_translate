@@ -197,6 +197,33 @@ def test_translate_segments_falls_back_to_single_worker_for_unknown_model(monkey
     assert results == ["单线程译文", "单线程译文"]
 
 
+def test_translate_segments_skips_whitespace_only_fragments():
+    from src.llm.batching import translate_segments
+
+    captured = {"call_count": 0}
+
+    class FakeClient:
+        def translate(self, model, system_prompt, user_prompt, temperature, top_p, proxies=None):
+            captured["call_count"] += 1
+            if "Actual fragment" in user_prompt:
+                return "实际译文"
+            return "不应请求模型"
+
+    results = translate_segments(
+        client=FakeClient(),
+        model="qwen-plus",
+        fragments=["\n\n", "Actual fragment", "  \n"],
+        more_requirement="",
+        temperature=0.2,
+        top_p=0.8,
+        proxies=None,
+        max_workers=3,
+    )
+
+    assert captured["call_count"] == 1
+    assert results == ["\n\n", "实际译文", "  \n"]
+
+
 def test_llm_package_exposes_core_exports():
     import src.llm as llm
 

@@ -5,9 +5,10 @@ arXiv 输入归一化与下载工具。
 from __future__ import annotations
 
 import re
+import shutil
 import tarfile
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import urlparse
 
 import requests
@@ -75,8 +76,7 @@ def extract_archive(file_path, dest_dir) -> None:
     destination.mkdir(parents=True, exist_ok=True)
 
     if tarfile.is_tarfile(archive_path):
-        with tarfile.open(archive_path, "r") as tar:
-            tar.extractall(path=destination)
+        _extract_tar_archive(archive_path, destination)
         return
 
     if zipfile.is_zipfile(archive_path):
@@ -85,6 +85,42 @@ def extract_archive(file_path, dest_dir) -> None:
         return
 
     raise ValueError(f"Unknown archive format: {archive_path}")
+
+
+def _extract_tar_archive(archive_path: Path, destination: Path) -> None:
+    with tarfile.open(archive_path, "r") as tar:
+        for member in tar.getmembers():
+            if not member.name or member.name == ".":
+                continue
+
+            target = _resolve_archive_target(destination, member.name)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+
+            if member.isfile():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                extracted = tar.extractfile(member)
+                if extracted is None:
+                    raise ValueError(f"无法读取 tar 成员: {member.name}")
+                with extracted, target.open("wb") as output:
+                    shutil.copyfileobj(extracted, output)
+                continue
+
+            raise ValueError(f"暂不支持的 tar 成员类型: {member.name}")
+
+
+def _resolve_archive_target(destination: Path, member_name: str) -> Path:
+    normalized = PurePosixPath(member_name)
+    if normalized.is_absolute():
+        raise ValueError(f"压缩包成员路径非法: {member_name}")
+
+    target = destination.joinpath(*normalized.parts)
+    destination_resolved = destination.resolve()
+    target_resolved = target.resolve(strict=False)
+    if target_resolved != destination_resolved and destination_resolved not in target_resolved.parents:
+        raise ValueError(f"压缩包成员路径越界: {member_name}")
+    return target
 
 
 def resolve_extracted_project_root(project_folder):

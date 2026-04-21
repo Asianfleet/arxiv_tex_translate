@@ -72,6 +72,44 @@ def test_generate_bilingual_tex_does_not_nest_source_document_wrappers():
     assert bilingual_tex.count(r"\end{document}") == 1
 
 
+def test_generate_bilingual_tex_preserves_source_preamble_definitions():
+    from src.latex.bilingual import generate_bilingual_tex
+
+    english_tex = (
+        r"\documentclass{article}"
+        "\n"
+        r"\title{Original Title}"
+        "\n"
+        r"\author{Author Name}"
+        "\n"
+        r"\begin{document}"
+        "\n"
+        r"\maketitle"
+        "\n"
+        "English body"
+        "\n"
+        r"\end{document}"
+    )
+    chinese_tex = (
+        r"\documentclass{article}"
+        "\n"
+        r"\title{中文标题}"
+        "\n"
+        r"\begin{document}"
+        "\n"
+        r"\maketitle"
+        "\n"
+        "中文内容"
+        "\n"
+        r"\end{document}"
+    )
+
+    bilingual_tex = generate_bilingual_tex(english_tex, chinese_tex)
+
+    assert r"\title{Original Title}" in bilingual_tex
+    assert r"\author{Author Name}" in bilingual_tex
+
+
 def test_latex_package_exports_bilingual_helpers():
     latex_pkg = importlib.import_module("src.latex")
     bilingual = importlib.import_module("src.latex.bilingual")

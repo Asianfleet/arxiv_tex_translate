@@ -1,3 +1,12 @@
 arxiv_cache/
 __pycache__/
 config.json
+.pytest_cache/
+.pytest-tmp/
+tests/_tmp_latex_compiler
+tests/_tmp_latex_merge
+tests/_tmp_latex_segmenter
+tests/_tmp_project_workspace
+tests/_tmp_tar_repro
+tests/_tmp_tar_repro2
+tests/_tmp_workflow_smoke

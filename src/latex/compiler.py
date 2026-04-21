@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -18,6 +19,8 @@ XELATEX_MARKERS = (
     "xltxtra",
     "xunicode",
 )
+
+BIBDATA_PATTERN = re.compile(r"\\bibdata\{([^}]*)\}")
 
 
 def choose_latex_engine(tex: str, tex_path: Path) -> str:
@@ -49,6 +52,32 @@ def _latex_command(engine: str, tex_name: str) -> list[str]:
     return [engine, "-interaction=nonstopmode", "-halt-on-error", f"{tex_name}.tex"]
 
 
+def _reuse_existing_bbl(work_dir: Path, main_name: str) -> bool:
+    aux_path = work_dir / f"{main_name}.aux"
+    if not aux_path.exists():
+        return False
+
+    aux_text = aux_path.read_text(encoding="utf-8", errors="ignore")
+    match = BIBDATA_PATTERN.search(aux_text)
+    if match is None:
+        return False
+
+    bib_names = [name.strip() for name in match.group(1).split(",") if name.strip()]
+    if not bib_names:
+        return False
+
+    if any((work_dir / f"{name}.bib").exists() for name in bib_names):
+        return False
+
+    target_bbl = work_dir / f"{main_name}.bbl"
+    for name in bib_names:
+        source_bbl = work_dir / f"{name}.bbl"
+        if source_bbl.exists():
+            shutil.copy2(source_bbl, target_bbl)
+            return True
+    return False
+
+
 def compile_latex_project(
     work_folder: Path,
     main_name: str,
@@ -63,7 +92,8 @@ def compile_latex_project(
         return False
 
     if (work_dir / f"{main_name}.aux").exists():
-        run_compile(["bibtex", main_name], work_dir)
+        if not _reuse_existing_bbl(work_dir, main_name):
+            run_compile(["bibtex", main_name], work_dir)
         run_compile(_latex_command(engine, main_name), work_dir)
         run_compile(_latex_command(engine, main_name), work_dir)
 
